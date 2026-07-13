@@ -1,0 +1,36 @@
+# ═══════════════════════════════════════════════════════════
+#  FarmHealth — .dockerignore
+#  ═══════════════════════════════════════════════════════════
+#  Excludes local development files from the Docker build
+#  context, keeping the image small and secure.
+#  ═══════════════════════════════════════════════════════════
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Local development
+node_modules/
+.env
+.env.local
+*.log
+*.md
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local credentials (NEVER copy to container)
+application_default_credentials.json
+*.pem
+*.key
+
+# Documentation
+FARMHEALTH_VISION.md
+app_related_agri.txt
+convert.ps1
+
+# Temp / Cache
+.tmp/
+.cache/

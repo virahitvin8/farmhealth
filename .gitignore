@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+server/node_modules/
+
+# Environment variables and secrets
+.env
+.env.local
+*.key
+*.pem
+*.p12
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Build outputs
+www/
+dist/
+build/
+coverage/
+
+# Capacitor
+android/
+.capacitor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Credentials (keep safe!)
+application_default_credentials.json
+*.credentials.json
+
+# Documents
+*.docx
+*.doc
+*.pdf
+
+# OAuth credentials sentinel
+config_sentinel
