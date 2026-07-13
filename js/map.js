@@ -506,8 +506,17 @@ const FH_MAP = (function() {
       ndvi: _state.analysisData?.meanNdvi || null
     };
 
+    // Save to localStorage (always — fast, immediate)
     _state.savedFields.push(field);
     localStorage.setItem('fh_saved_fields', JSON.stringify(_state.savedFields));
+    
+    // Also sync to Firestore (if Firebase is available and logged in)
+    if (typeof FH_FIREBASE !== 'undefined' && FH_FIREBASE.getCurrentUser()) {
+      FH_FIREBASE.saveField(field).catch(err => 
+        console.warn('[Fields] Firestore save failed:', err)
+      );
+    }
+    
     toast(`💾 Saved: ${field.name}`);
     return field;
   }
@@ -521,6 +530,32 @@ const FH_MAP = (function() {
       _state.savedFields = [];
       return [];
     }
+  }
+
+  /**
+   * Merge fields from Firestore into the saved fields list.
+   * Called after Firebase auth state change to sync cloud data.
+   * Firestore fields take priority over localStorage (newer by updatedAt).
+   */
+  function mergeFromFirestore(firestoreFields) {
+    if (!firestoreFields || !firestoreFields.length) return;
+    
+    // Build a map of existing fields by id
+    const localMap = {};
+    _state.savedFields.forEach(f => { localMap[f.id] = f; });
+    
+    // Merge: Firestore fields override localStorage ones with same id
+    firestoreFields.forEach(f => {
+      localMap[f.id] = f;
+    });
+    
+    // Convert back to array, sorted by date descending
+    _state.savedFields = Object.values(localMap).sort((a, b) => 
+      new Date(b.date || 0) - new Date(a.date || 0)
+    );
+    
+    // Persist merged result to localStorage
+    localStorage.setItem('fh_saved_fields', JSON.stringify(_state.savedFields));
   }
 
   function loadFieldFromSaved(fieldOrIdx) {
@@ -538,6 +573,14 @@ const FH_MAP = (function() {
   function deleteSavedField(id) {
     _state.savedFields = _state.savedFields.filter(f => f.id !== id);
     localStorage.setItem('fh_saved_fields', JSON.stringify(_state.savedFields));
+    
+    // Also delete from Firestore (if logged in)
+    if (typeof FH_FIREBASE !== 'undefined' && FH_FIREBASE.getCurrentUser()) {
+      FH_FIREBASE.deleteSavedField(id).catch(err =>
+        console.warn('[Fields] Firestore delete failed:', err)
+      );
+    }
+    
     FH_UI.renderSavedFields();
   }
 
@@ -579,6 +622,7 @@ const FH_MAP = (function() {
     saveCurrentField,
     loadSavedFields,
     loadFieldFromSaved,
-    deleteSavedField
+    deleteSavedField,
+    mergeFromFirestore
   };
 })();

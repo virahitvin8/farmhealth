@@ -47,7 +47,7 @@ const FH_FIREBASE = (function() {
       });
 
       // Listen for auth state changes
-      _auth.onAuthStateChanged(user => {
+      _auth.onAuthStateChanged(async user => {
         _currentUser = user;
         if (user) {
           // User is signed in — trigger UI update
@@ -60,27 +60,61 @@ const FH_FIREBASE = (function() {
           // Close login modal and update UI
           const modal = document.getElementById('loginModal');
           if (modal) modal.classList.remove('show');
+          const googleModal = document.getElementById('googleModal');
+          if (googleModal) googleModal.style.display = 'none';
           
           if (window.FH_UI && FH_UI.applyRoleUI) {
             FH_UI.applyRoleUI(role);
           }
           
-          // Update user info in sidebar
-          const userInfo = document.getElementById('userInfo');
-          if (userInfo) {
+          // Show user profile bar in sidebar
+          const userBar = document.getElementById('userBar');
+          if (userBar) {
+            userBar.style.display = 'flex';
+            
+            const avatarWrap = document.getElementById('userAvatarWrap');
             const photo = user.photoURL || '';
             const name = user.displayName || user.email;
-            userInfo.innerHTML = photo 
-              ? `<img src="${photo}" class="user-avatar" alt=""> <span class="user-name">${name}</span>`
-              : `<span class="user-avatar-placeholder">${name.charAt(0).toUpperCase()}</span> <span class="user-name">${name}</span>`;
+            if (avatarWrap) {
+              avatarWrap.innerHTML = photo
+                ? `<img src="${photo}" class="user-avatar" alt="" referrerpolicy="no-referrer">`
+                : `<div class="user-avatar-placeholder">${name.charAt(0).toUpperCase()}</div>`;
+            }
+            
+            const nameEl = document.getElementById('userDisplayName');
+            if (nameEl) nameEl.textContent = name;
+            
+            const emailEl = document.getElementById('userDisplayEmail');
+            if (emailEl) emailEl.textContent = user.email;
+            
+            const roleBadge = document.getElementById('userRoleBadge');
+            if (roleBadge) {
+              roleBadge.textContent = role;
+              roleBadge.className = 'user-role-badge ' + role;
+            }
           }
           
           const toast = window.FH_UTILS && FH_UTILS.toast;
           if (toast) toast(`👋 Welcome, ${user.displayName || user.email}!`);
+          
+          // Sync saved fields from Firestore to localStorage
+          await syncFieldsToLocalStorage();
+          
+          // Re-render saved fields list with merged data
+          if (window.FH_UI && FH_UI.renderSavedFields) {
+            FH_UI.renderSavedFields();
+          }
         } else {
           // User is signed out — show login modal
           localStorage.removeItem('fh_auth_role');
           localStorage.removeItem('fh_auth_email');
+          localStorage.removeItem('fh_auth_name');
+          localStorage.removeItem('fh_auth_photo');
+          
+          // Hide user profile bar
+          const userBar = document.getElementById('userBar');
+          if (userBar) userBar.style.display = 'none';
+          
           const modal = document.getElementById('loginModal');
           if (modal && !localStorage.getItem('fh_auth_manual_logout')) {
             modal.classList.add('show');
@@ -134,7 +168,12 @@ const FH_FIREBASE = (function() {
   // ─── Sign Out ───
   async function signOut() {
     try {
-      if (!_auth) return;
+      if (!_auth) {
+        // Mock fallback — no Firebase, just clear localStorage
+        ['fh_auth_role','fh_auth_email','fh_auth_name','fh_auth_photo'].forEach(k => localStorage.removeItem(k));
+        window.location.reload();
+        return;
+      }
       localStorage.setItem('fh_auth_manual_logout', 'true');
       await _auth.signOut();
       window.location.reload();
@@ -198,6 +237,24 @@ const FH_FIREBASE = (function() {
         .collection('savedFields').doc(fieldId).delete();
     } catch (e) {
       console.error('[Firebase] deleteSavedField error:', e);
+    }
+  }
+
+  // ─── FIRESTORE: Sync Fields to LocalStorage ───
+  async function syncFieldsToLocalStorage() {
+    try {
+      const firestoreFields = await loadSavedFields();
+      if (firestoreFields && firestoreFields.length > 0) {
+        // Merge Firestore fields into localStorage via FH_MAP
+        if (window.FH_MAP && FH_MAP.mergeFromFirestore) {
+          FH_MAP.mergeFromFirestore(firestoreFields);
+          console.log('[Firebase] Synced', firestoreFields.length, 'fields from Firestore');
+        }
+      }
+      return firestoreFields;
+    } catch (e) {
+      console.warn('[Firebase] Field sync skipped:', e.message);
+      return [];
     }
   }
 

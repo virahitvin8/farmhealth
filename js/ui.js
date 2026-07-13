@@ -114,6 +114,35 @@ const FH_UI = (function() {
     if (adminSettings) {
       adminSettings.style.display = role === 'admin' ? 'block' : 'none';
     }
+    
+    // Show user bar for manual (non-Firebase) logins using localStorage data
+    const userBar = document.getElementById('userBar');
+    if (userBar && userBar.style.display === 'none') {
+      const name = localStorage.getItem('fh_auth_name') || role;
+      const email = localStorage.getItem('fh_auth_email') || '';
+      const photo = localStorage.getItem('fh_auth_photo') || '';
+      
+      userBar.style.display = 'flex';
+      
+      const avatarWrap = document.getElementById('userAvatarWrap');
+      if (avatarWrap) {
+        avatarWrap.innerHTML = photo
+          ? `<img src="${photo}" class="user-avatar" alt="" referrerpolicy="no-referrer">`
+          : `<div class="user-avatar-placeholder">${(name || 'U').charAt(0).toUpperCase()}</div>`;
+      }
+      
+      const nameEl = document.getElementById('userDisplayName');
+      if (nameEl) nameEl.textContent = name;
+      
+      const emailEl = document.getElementById('userDisplayEmail');
+      if (emailEl) emailEl.textContent = email;
+      
+      const roleBadge = document.getElementById('userRoleBadge');
+      if (roleBadge) {
+        roleBadge.textContent = role;
+        roleBadge.className = 'user-role-badge ' + role;
+      }
+    }
   }
 
   // ═══════════ SATELLITE SCENES RENDER (Enhanced) ═══════════
