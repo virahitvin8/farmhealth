@@ -114,17 +114,29 @@ const FH_API = (function() {
   async function fetchStatistics(dateStr) {
     const token = await getSHToken();
 
+    // Widen search to ±5 days for better hit rate
+    const targetDate = new Date(dateStr);
+    const fromDate = new Date(targetDate);
+    fromDate.setDate(fromDate.getDate() - 5);
+    const toDate = new Date(targetDate);
+    toDate.setDate(toDate.getDate() + 5);
+    const fromStr = fromDate.toISOString().split('T')[0];
+    const toStr = toDate.toISOString().split('T')[0];
+
     const payload = {
       input: {
         bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
         data: [{
           type: "sentinel-2-l2a",
-          dataFilter: { timeRange: { from: dateStr + "T00:00:00Z", to: dateStr + "T23:59:59Z" } }
+          dataFilter: { 
+            timeRange: { from: fromStr + "T00:00:00Z", to: toStr + "T23:59:59Z" },
+            mosaickingOrder: "leastCC"
+          }
         }]
       },
       aggregation: {
-        timeRange: { from: dateStr + "T00:00:00Z", to: dateStr + "T23:59:59Z" },
-        aggregationInterval: { of: "P1D" },
+        timeRange: { from: fromStr + "T00:00:00Z", to: toStr + "T23:59:59Z" },
+        aggregationInterval: { of: "P10D" },
         evalscript: buildNDVIEvalscript()
       }
     };
@@ -137,35 +149,151 @@ const FH_API = (function() {
 
     if (!res.ok) throw new Error("Statistics API: " + res.statusText);
     const data = await res.json();
-    const stats = data.data[0]?.outputs?.ndvi?.bands?.B0?.stats;
-    return stats ? stats.mean : 0.5;
+    // Get the most recent interval with valid data
+    const validIntervals = (data.data || []).filter(d => d.outputs?.ndvi?.bands?.B0?.stats?.sampleCount > 0);
+    if (validIntervals.length > 0) {
+      const stats = validIntervals[validIntervals.length - 1].outputs.ndvi.bands.B0.stats;
+      return stats.mean;
+    }
+    return 0.5;
   }
 
-  // ═══════════ GENERATE SIMULATED GRID DATA (fallback when APIs fail) ═══════════
-  // Creates a realistic NDVI distribution with some spatial variation
+  // ═══════════ POINT-IN-POLYGON (Ray Casting) ═══════════
+  function pointInPolygon(lat, lng, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const xi = polygon[i][0], yi = polygon[i][1];
+      const xj = polygon[j][0], yj = polygon[j][1];
+      const intersect = ((yi > lng) !== (yj > lng)) &&
+        (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // ═══════════ NDVI → Health Color Mapper ═══════════
+  function ndviToHealthColor(ndvi, peak) {
+    const p = ndvi / peak;
+    if (ndvi < 0.15) return { color: '#8b5a2b', cls: 0, label: 'Bare soil' };
+    if (p < 0.40)    return { color: '#e74c3c', cls: 1, label: 'Poor' };
+    if (p < 0.55)    return { color: '#f39c12', cls: 2, label: 'Below avg' };
+    if (p < 0.72)    return { color: '#f1c40f', cls: 3, label: 'Moderate' };
+    if (p < 0.88)    return { color: '#7ac943', cls: 4, label: 'Healthy' };
+    return              { color: '#1e7d32', cls: 5, label: 'Very healthy' };
+  }
+
+  // ═══════════ DRAW VISUAL HEALTH GRID ON MAP ═══════════
+  // Creates colored rectangle cells inside the field boundary
+  function drawHealthGrid(gridData, cropPeak) {
+    if (!_state.ndviLayer || !_state.fieldLL || !_state.fieldLL.length) return;
+    // Don't clear if Sentinel Hub image overlay is already there — add grid on top
+    
+    const bb = polyBBox(_state.fieldLL);
+    const peak = cropPeak || 0.80;
+    const GRID = 12; // 12x12 grid cells
+    const latStep = (bb.north - bb.south) / GRID;
+    const lngStep = (bb.east - bb.west) / GRID;
+    
+    // Build polygon array for point-in-polygon test
+    const poly = _state.fieldLL.map(ll => [ll[0], ll[1]]);
+    
+    let cc = [0, 0, 0, 0, 0, 0];
+    let cnt = 0;
+    
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        const cellLat = bb.south + (r + 0.5) * latStep;
+        const cellLng = bb.west + (c + 0.5) * lngStep;
+        
+        // Only draw cells inside the field boundary
+        if (!pointInPolygon(cellLat, cellLng, poly)) continue;
+        
+        // Get NDVI value for this cell from gridData
+        const ndvi = gridData[r * GRID + c] || 0;
+        const health = ndviToHealthColor(ndvi, peak);
+        cc[health.cls]++;
+        cnt++;
+        
+        // Draw the colored rectangle on the map
+        const cellBounds = [
+          [bb.south + r * latStep, bb.west + c * lngStep],
+          [bb.south + (r + 1) * latStep, bb.west + (c + 1) * lngStep]
+        ];
+        
+        L.rectangle(cellBounds, {
+          color: health.color,
+          weight: 0.5,
+          opacity: 0.6,
+          fillColor: health.color,
+          fillOpacity: 0.55
+        }).bindTooltip(
+          `<b>${health.label}</b><br>NDVI: ${ndvi.toFixed(3)}<br>Health: ${(ndvi/peak*100).toFixed(0)}%`,
+          { sticky: true, className: 'ndvi-tooltip' }
+        ).addTo(_state.ndviLayer);
+      }
+    }
+    
+    return { cc, cnt: Math.max(1, cnt) };
+  }
+
+  // ═══════════ GENERATE SIMULATED GRID DATA + VISUAL OVERLAY ═══════════
+  // Creates a realistic NDVI spatial distribution with gradients and stress zones
   function generateSimulatedGrid(meanNdvi, cropPeak) {
     const peak = cropPeak || 0.80;
     const mean = meanNdvi || 0.60;
-    const vari = 0.12; // natural variation
+    const GRID = 12;
     
-    // Generate 5000 sample points with normal distribution around mean
-    const samples = 5000;
-    let cc = [0, 0, 0, 0, 0, 0];
-    for (let i = 0; i < samples; i++) {
-      // Box-Muller transform for normal distribution
-      const u1 = Math.random();
-      const u2 = Math.random();
-      const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
-      const ndvi = Math.max(-0.1, Math.min(1.0, mean + z * vari));
-      
-      if (ndvi < 0.15) cc[0]++;
-      else if (ndvi / peak < 0.40) cc[1]++;
-      else if (ndvi / peak < 0.55) cc[2]++;
-      else if (ndvi / peak < 0.72) cc[3]++;
-      else if (ndvi / peak < 0.88) cc[4]++;
-      else cc[5]++;
+    // Clear existing overlay
+    if (_state.ndviLayer) _state.ndviLayer.clearLayers();
+    
+    // Generate spatially coherent NDVI grid with gradient + hotspots
+    const gridData = [];
+    
+    // Create 2-3 random stress hotspots
+    const hotspots = [];
+    const numHotspots = 1 + Math.floor(Math.random() * 3);
+    for (let h = 0; h < numHotspots; h++) {
+      hotspots.push({
+        r: Math.floor(Math.random() * GRID),
+        c: Math.floor(Math.random() * GRID),
+        radius: 1.5 + Math.random() * 2.5,
+        intensity: 0.15 + Math.random() * 0.25 // how much NDVI drops near hotspot
+      });
     }
-    return { cc, cnt: samples };
+    
+    // Create a slight NW-SE gradient (common in real fields due to irrigation/drainage)
+    const gradientAngle = Math.random() * Math.PI;
+    const gradientStrength = 0.03 + Math.random() * 0.05;
+    
+    for (let r = 0; r < GRID; r++) {
+      for (let c = 0; c < GRID; c++) {
+        // Base NDVI with spatial gradient
+        const gradientEffect = (Math.cos(gradientAngle) * (r / GRID - 0.5) + 
+                                Math.sin(gradientAngle) * (c / GRID - 0.5)) * gradientStrength;
+        
+        // Small random noise
+        const u1 = Math.random();
+        const u2 = Math.random();
+        const noise = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2) * 0.06;
+        
+        // Stress hotspot effects
+        let hotspotDrop = 0;
+        for (const hs of hotspots) {
+          const dist = Math.sqrt((r - hs.r) ** 2 + (c - hs.c) ** 2);
+          if (dist < hs.radius) {
+            hotspotDrop += hs.intensity * (1 - dist / hs.radius);
+          }
+        }
+        
+        const ndvi = Math.max(0.05, Math.min(0.95, mean + gradientEffect + noise - hotspotDrop));
+        gridData.push(ndvi);
+      }
+    }
+    
+    // Draw visual grid on the map
+    const result = drawHealthGrid(gridData, peak);
+    
+    return result || { cc: [0, 0, 0, 0, 0, 0], cnt: 1 };
   }
 
   // ═══════════ SENTINEL HUB PROCESS API ═══════════
@@ -179,12 +307,24 @@ const FH_API = (function() {
       if (indexType === 'sar') datasetType = "sentinel-1-grd";
       if (indexType === 'tvdi') datasetType = "landsat-8-l1c";
 
+      // Widen search to ±5 days (Sentinel-2 revisit is 5 days)
+      const targetDate = new Date(dateStr);
+      const fromDate = new Date(targetDate);
+      fromDate.setDate(fromDate.getDate() - 5);
+      const toDate = new Date(targetDate);
+      toDate.setDate(toDate.getDate() + 5);
+      const fromStr = fromDate.toISOString().split('T')[0];
+      const toStr = toDate.toISOString().split('T')[0];
+
       const payload = {
         input: {
           bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
           data: [{
             type: datasetType,
-            dataFilter: { timeRange: { from: dateStr + "T00:00:00Z", to: dateStr + "T23:59:59Z" } }
+            dataFilter: { 
+              timeRange: { from: fromStr + "T00:00:00Z", to: toStr + "T23:59:59Z" },
+              mosaickingOrder: "leastCC"
+            }
           }]
         },
         output: { width: 256, height: 256, responses: [{ identifier: "default", format: { type: "image/png" } }] },
@@ -724,6 +864,7 @@ const FH_API = (function() {
     fetchScenes,
     fetchStatistics,
     renderGrid,
+    drawHealthGrid,
     generateTimeSeries,
     fetchWeather,
     fetchTerrain,
@@ -732,6 +873,8 @@ const FH_API = (function() {
     fetchCombinedStress,
     fetchPestRisk,
     getAIAdvice,
-    reverseGeocode
+    reverseGeocode,
+    fetchGEEStatistics,
+    fetchGEETimeSeries
   };
 })();

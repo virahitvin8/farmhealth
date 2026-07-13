@@ -1993,3 +1993,46 @@ button {
     max-height: 80vh;
   }
 }
+
+/* ═══ NDVI Grid Health Tooltip ═══ */
+.ndvi-tooltip {
+  background: rgba(15, 26, 18, 0.92) !important;
+  border: 1px solid rgba(46, 204, 113, 0.5) !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.78rem !important;
+  color: #e8f5e9 !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4) !important;
+  line-height: 1.5 !important;
+}
+
+.ndvi-tooltip b {
+  color: #2ecc71;
+  font-size: 0.85rem;
+}
+
+/* ═══ Data Source Badge ═══ */
+.data-source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.data-source-badge.real {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.data-source-badge.simulated {
+  background: rgba(243, 156, 18, 0.15);
+  color: #f39c12;
+  border: 1px solid rgba(243, 156, 18, 0.3);
+}

@@ -297,13 +297,33 @@ const FH_UI = (function() {
 
   // ═══════════ RESULTS RENDER ═══════════
   function renderResults(analysisData) {
-    const { crop, stage, seed, meanNdvi, cnt, cc } = analysisData;
+    const { crop, stage, seed, meanNdvi, cnt, cc, dataSource } = analysisData;
     const prob = (cc[0] + cc[1] + cc[2]) / cnt * 100;
     const score = Math.round(Math.min(100, (meanNdvi / crop.peak) * 115));
 
     $('resultsCard').style.display = '';
     $('layerSelectorCard').style.display = '';
     $('mapLegend').style.display = '';
+    
+    // Show data source badge at the top of results
+    const isReal = dataSource !== 'simulated' && dataSource !== undefined;
+    const sourceBadge = isReal 
+      ? `<span class="badge badge-live" style="font-size:0.65rem">🛰️ LIVE | ${dataSource === 'google-earth-engine' ? 'Google Earth Engine' : 'Sentinel Hub'}</span>`
+      : `<span class="badge badge-warn" style="font-size:0.65rem">🔄 DEMO | Simulated</span>`;
+    
+    // Insert source badge before the stats grid
+    const statGrid = $('statGrid');
+    if (statGrid) {
+      let badgeContainer = document.getElementById('sourceBadge');
+      if (!badgeContainer) {
+        badgeContainer = document.createElement('div');
+        badgeContainer.id = 'sourceBadge';
+        badgeContainer.style.cssText = 'margin-bottom:8px;display:flex;align-items:center;gap:6px';
+        statGrid.parentNode.insertBefore(badgeContainer, statGrid);
+      }
+      badgeContainer.innerHTML = sourceBadge + (isReal ? '' : '<span style="font-size:0.6rem;color:var(--text-faint)">Enter Sentinel Hub credentials in Settings to get LIVE data</span>');
+    }
+    
     $('statNdvi').textContent = meanNdvi.toFixed(3);
     $('statScore').textContent = score + '%';
     $('statScore').className = 'val' + (score < 50 ? ' bad' : score < 70 ? ' warn' : '');

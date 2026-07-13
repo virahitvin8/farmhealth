@@ -402,7 +402,8 @@ const FH_ANALYSIS = (function() {
         seed: dateStr,
         meanNdvi,
         cnt: gridStats.cnt,
-        cc: gridStats.cc
+        cc: gridStats.cc,
+        dataSource: _state.simulatedData ? 'simulated' : usedDataSource
       };
 
       // 3. Update results UI
@@ -465,7 +466,9 @@ const FH_ANALYSIS = (function() {
       $('aiCard').style.display = '';
       hideLoading();
       $('resultsCard').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      toast(`🛰️ Analysis complete! (${usedDataSource === 'google-earth-engine' ? 'Google Earth Engine' : 'Sentinel Hub'})`);
+      const sourceLabel = _state.simulatedData ? 'Simulated (API unavailable)' :
+        (usedDataSource === 'google-earth-engine' ? 'Google Earth Engine' : 'Sentinel Hub');
+      toast(`🛰️ Analysis complete! Data: ${sourceLabel}`);
 
     } catch (e) {
       console.error(e);
@@ -473,6 +476,19 @@ const FH_ANALYSIS = (function() {
       toast('⚠️ Error: ' + e.message, 'err');
     } finally {
       $('analyzeBtn').disabled = false;
+    }
+
+    // After analysis, force render the health grid on map for visual clarity
+    // (If process API succeeded, grid sits on top of image; if simulated, grid is the main viz)
+    if (_state.analysisData) {
+      showLoading('🎨 Rendering health visualization…', 80);
+      // Ensure the simulatedData flag reflects the actual source
+      // Force renderGrid again with current analysis data to ensure grid is visible
+      try {
+        await FH_API.renderGrid(_state.currentIndex, dateStr, crop.peak, meanNdvi);
+      } catch(e) {
+        console.warn('Re-render for grid only:', e);
+      }
     }
   }
 
