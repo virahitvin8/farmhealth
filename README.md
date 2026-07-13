@@ -58,6 +58,8 @@
 | ⛰️ | **Terrain Analysis** | Elevation, slope, drainage class | Open-Meteo + SRTM |
 | 🌱 | **Soil Properties** | pH, organic carbon, texture, nitrogen | SoilGrids |
 | 📊 | **Time Series** | Track NDVI changes over time with change detection | Sentinel Hub Stats |
+| 🚇 | **Guided Onboarding** | 8-step metro tour walks new users through first analysis | Interactive UI |
+| 📚 | **Education Module** | 8 remote sensing lessons + 10-question knowledge quiz | Built-in |
 | 📱 | **PWA + Android** | Installs as native app, works offline | Capacitor + Service Worker |
 
 ---
@@ -90,11 +92,12 @@
 git clone https://github.com/virahitvin8/farmhealth.git
 cd farmhealth
 
-# Install frontend dependencies
-npm install
-
-# Install server dependencies
+# Install server dependencies (required)
 cd server && npm install && cd ..
+
+# Install frontend dependencies (optional - only for Android/Capacitor builds)
+# The frontend is vanilla JS - no build step needed!
+# npm install
 ```
 
 ### 2. Run Locally
@@ -449,8 +452,15 @@ farmhealth/
 ### Server won't start
 - **Check Node.js version**: `node --version` (needs v18+)
 - **Missing dependencies**: Run `cd server && npm install`
-- **Port in use**: Run `lsof -i :3001` and kill the process
+- **Port in use (EADDRINUSE)**: `Error: listen EADDRINUSE: address already in use :::3001` means another process is on port 3001
+  ```bash
+  lsof -i :3001
+  kill -9 <PID>
+  # Or kill all node servers:
+  pkill -f 'node server/server.js'
+  ```
 - **GEE timeout**: Server adds 15s timeout for GEE init - if it fails, health returns `disconnected` but frontend still works
+- **Server log**: Check `/tmp/fh-server.log` for detailed startup errors
 
 ### Satellite data not loading
 - **Check internet connection** (Sentinel Hub API requires internet)
