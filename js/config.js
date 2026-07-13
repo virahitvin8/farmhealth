@@ -9,10 +9,9 @@ const FH_CONFIG = (function() {
   const SH_CLIENT_ID = '0cf48b39-ea09-4cfa-9845-4fb6ccfcd688';
   const SH_CLIENT_SECRET = 'BZDMaPTfW6GRX7j564qogGQQy4YEXkYR';
 
-  // ─── Gemini AI API Key (built-in key for convenience) ───
-  // ⚠️ Replace with your own key: https://aistudio.google.com/app/apikey
-  // Override via Settings > Gemini API Key
-  // Restore original key (replace with your own in Settings)
+  // ─── Gemini AI API Key ───
+  // ⚠️ Set your own key in Settings > Gemini API Key for AI features
+  // Get a free key: https://aistudio.google.com/app/apikey
   const GEMINI_API_KEY = '';
 
   // ─── GCP Service Account & Auth ───
