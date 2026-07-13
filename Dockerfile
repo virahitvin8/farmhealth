@@ -10,8 +10,8 @@ FROM node:20-slim AS builder
 
 WORKDIR /app
 
-# Copy server package and install dependencies
-COPY server/package.json ./server/package.json
+# Copy server files and install dependencies
+COPY server/ ./server/
 WORKDIR /app/server
 RUN npm install --omit=dev
 
