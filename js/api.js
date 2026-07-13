@@ -70,24 +70,43 @@ const FH_API = (function() {
       limit: 20
     };
 
-    const data = await fetchJSON(API.STAC_URL + '/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    try {
+      const data = await fetchJSON(API.STAC_URL + '/search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
 
-    if (!data || !data.features) {
-      toast('⚠️ Could not fetch satellite scenes', 'err');
-      return [];
+      if (data && data.features) {
+        _state.scenes = data.features.map(f => ({
+          id: f.id,
+          date: f.properties.datetime?.split('T')[0] || 'Unknown',
+          cloud: Math.round(f.properties['eo:cloud_cover'] || 0),
+          thumbnail: f.assets?.thumbnail?.href || null
+        }));
+        return _state.scenes;
+      }
+    } catch (e) {
+      console.warn('STAC API failed, using simulated scenes:', e);
     }
 
-    _state.scenes = data.features.map(f => ({
-      id: f.id,
-      date: f.properties.datetime?.split('T')[0] || 'Unknown',
-      cloud: Math.round(f.properties['eo:cloud_cover'] || 0),
-      thumbnail: f.assets?.thumbnail?.href || null
-    }));
-
+    // Fallback: generate simulated scenes spanning the last N months
+    toast('📡 Using simulated satellite scenes (real API unavailable)', 'info');
+    const simulated = [];
+    const totalDays = months * 30;
+    const step = Math.max(7, Math.floor(totalDays / 10));
+    for (let d = totalDays; d >= 0; d -= step) {
+      const date = new Date(now);
+      date.setDate(date.getDate() - d);
+      const cloudPct = Math.round(5 + Math.random() * 25);
+      simulated.push({
+        id: 'simulated-s2-' + dateStr(date),
+        date: dateStr(date),
+        cloud: cloudPct,
+        thumbnail: null
+      });
+    }
+    _state.scenes = simulated;
     return _state.scenes;
   }
 
@@ -122,112 +141,167 @@ const FH_API = (function() {
     return stats ? stats.mean : 0.5;
   }
 
+  // ═══════════ GENERATE SIMULATED GRID DATA (fallback when APIs fail) ═══════════
+  // Creates a realistic NDVI distribution with some spatial variation
+  function generateSimulatedGrid(meanNdvi, cropPeak) {
+    const peak = cropPeak || 0.80;
+    const mean = meanNdvi || 0.60;
+    const vari = 0.12; // natural variation
+    
+    // Generate 5000 sample points with normal distribution around mean
+    const samples = 5000;
+    let cc = [0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < samples; i++) {
+      // Box-Muller transform for normal distribution
+      const u1 = Math.random();
+      const u2 = Math.random();
+      const z = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+      const ndvi = Math.max(-0.1, Math.min(1.0, mean + z * vari));
+      
+      if (ndvi < 0.15) cc[0]++;
+      else if (ndvi / peak < 0.40) cc[1]++;
+      else if (ndvi / peak < 0.55) cc[2]++;
+      else if (ndvi / peak < 0.72) cc[3]++;
+      else if (ndvi / peak < 0.88) cc[4]++;
+      else cc[5]++;
+    }
+    return { cc, cnt: samples };
+  }
+
   // ═══════════ SENTINEL HUB PROCESS API ═══════════
   async function renderGrid(indexType, dateStr, cropPeak) {
-    const token = await getSHToken();
-    if (_state.ndviLayer) _state.ndviLayer.clearLayers();
+    // Fallback: if Sentinel Hub calls fail, use simulated data
+    try {
+      const token = await getSHToken();
+      if (_state.ndviLayer) _state.ndviLayer.clearLayers();
 
-    let datasetType = "sentinel-2-l2a";
-    if (indexType === 'sar') datasetType = "sentinel-1-grd";
-    if (indexType === 'tvdi') datasetType = "landsat-8-l1c";
+      let datasetType = "sentinel-2-l2a";
+      if (indexType === 'sar') datasetType = "sentinel-1-grd";
+      if (indexType === 'tvdi') datasetType = "landsat-8-l1c";
 
-    const payload = {
-      input: {
-        bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
-        data: [{
-          type: datasetType,
-          dataFilter: { timeRange: { from: dateStr + "T00:00:00Z", to: dateStr + "T23:59:59Z" } }
-        }]
-      },
-      output: { width: 256, height: 256, responses: [{ identifier: "default", format: { type: "image/png" } }] },
-      evalscript: buildEvalscript(indexType, cropPeak)
-    };
-
-    const res = await fetch(API.SH_PROCESS, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json',
-        'Accept': 'image/png'
-      },
-      body: JSON.stringify(payload)
-    });
-
-    if (!res.ok) throw new Error('Process API: ' + res.statusText);
-    const blob = await res.blob();
-    const imageUrl = URL.createObjectURL(blob);
-    const bounds = _state.fieldPoly.getBounds();
-    L.imageOverlay(imageUrl, bounds).addTo(_state.ndviLayer);
-
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = 'Anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-
-        let cc = [0, 0, 0, 0, 0, 0],
-          cnt = 0;
-        for (let i = 0; i < imgData.length; i += 4) {
-          if (imgData[i + 3] === 0) continue;
-          const r = imgData[i],
-            g = imgData[i + 1];
-          cnt++;
-          if (r === 139 && g === 90) cc[0]++;
-          else if (r === 231 && g === 76) cc[1]++;
-          else if (r === 243 && g === 156) cc[2]++;
-          else if (r === 241 && g === 196) cc[3]++;
-          else if (r === 122 && g === 201) cc[4]++;
-          else if (r === 30 && g === 125) cc[5]++;
-          else cc[4]++;
-        }
-        resolve({ cc, cnt: Math.max(1, cnt) });
+      const payload = {
+        input: {
+          bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
+          data: [{
+            type: datasetType,
+            dataFilter: { timeRange: { from: dateStr + "T00:00:00Z", to: dateStr + "T23:59:59Z" } }
+          }]
+        },
+        output: { width: 256, height: 256, responses: [{ identifier: "default", format: { type: "image/png" } }] },
+        evalscript: buildEvalscript(indexType, cropPeak)
       };
-      img.src = imageUrl;
-    });
+
+      const res = await fetch(API.SH_PROCESS, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type': 'application/json',
+          'Accept': 'image/png'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) throw new Error('Process API: ' + res.statusText);
+      const blob = await res.blob();
+      const imageUrl = URL.createObjectURL(blob);
+      const bounds = _state.fieldPoly.getBounds();
+      L.imageOverlay(imageUrl, bounds).addTo(_state.ndviLayer);
+
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'Anonymous';
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+          let cc = [0, 0, 0, 0, 0, 0],
+            cnt = 0;
+          for (let i = 0; i < imgData.length; i += 4) {
+            if (imgData[i + 3] === 0) continue;
+            const r = imgData[i],
+              g = imgData[i + 1];
+            cnt++;
+            if (r === 139 && g === 90) cc[0]++;
+            else if (r === 231 && g === 76) cc[1]++;
+            else if (r === 243 && g === 156) cc[2]++;
+            else if (r === 241 && g === 196) cc[3]++;
+            else if (r === 122 && g === 201) cc[4]++;
+            else if (r === 30 && g === 125) cc[5]++;
+            else cc[4]++;
+          }
+          resolve({ cc, cnt: Math.max(1, cnt) });
+        };
+        img.src = imageUrl;
+      });
+    } catch (e) {
+      console.warn('Sentinel Hub Process API failed, using simulated data:', e);
+      toast('🔄 Using simulated satellite data (real API unavailable)', 'info');
+      // Return simulated data based on a reasonable NDVI for the region
+      const simMean = 0.55 + Math.random() * 0.25;
+      return generateSimulatedGrid(simMean, cropPeak);
+    }
   }
 
   // ═══════════ SENTINEL HUB TIME SERIES ═══════════
   async function generateTimeSeries() {
-    const token = await getSHToken();
-    const toDate = new Date();
-    const fromDate = new Date();
-    fromDate.setMonth(fromDate.getMonth() - 2);
+    try {
+      const token = await getSHToken();
+      const toDate = new Date();
+      const fromDate = new Date();
+      fromDate.setMonth(fromDate.getMonth() - 2);
 
-    const payload = {
-      input: {
-        bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
-        data: [{
-          type: "sentinel-2-l2a",
-          dataFilter: { timeRange: { from: dateStr(fromDate) + "T00:00:00Z", to: dateStr(toDate) + "T23:59:59Z" } }
-        }]
-      },
-      aggregation: {
-        timeRange: { from: dateStr(fromDate) + "T00:00:00Z", to: dateStr(toDate) + "T23:59:59Z" },
-        aggregationInterval: { of: "P5D" },
-        evalscript: buildNDVIEvalscript()
-      }
-    };
-
-    const res = await fetch(API.SH_STATISTICS, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      _state.tsData = [];
-      data.data.forEach(int => {
-        const stats = int.outputs?.ndvi?.bands?.B0?.stats;
-        if (stats && stats.sampleCount > 0) {
-          _state.tsData.push({ date: int.interval.from.split('T')[0], ndvi: stats.mean });
+      const payload = {
+        input: {
+          bounds: { geometry: getSHGeoJSON(), properties: { crs: "http://www.opengis.net/def/crs/EPSG/0/4326" } },
+          data: [{
+            type: "sentinel-2-l2a",
+            dataFilter: { timeRange: { from: dateStr(fromDate) + "T00:00:00Z", to: dateStr(toDate) + "T23:59:59Z" } }
+          }]
+        },
+        aggregation: {
+          timeRange: { from: dateStr(fromDate) + "T00:00:00Z", to: dateStr(toDate) + "T23:59:59Z" },
+          aggregationInterval: { of: "P5D" },
+          evalscript: buildNDVIEvalscript()
         }
+      };
+
+      const res = await fetch(API.SH_STATISTICS, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
+
+      if (res.ok) {
+        const data = await res.json();
+        _state.tsData = [];
+        data.data.forEach(int => {
+          const stats = int.outputs?.ndvi?.bands?.B0?.stats;
+          if (stats && stats.sampleCount > 0) {
+            _state.tsData.push({ date: int.interval.from.split('T')[0], ndvi: stats.mean });
+          }
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('Time Series API failed:', e);
+    }
+
+    // Fallback: generate simulated time series
+    if (!_state.tsData || _state.tsData.length === 0) {
+      _state.tsData = [];
+      const baseNdvi = 0.45 + Math.random() * 0.25;
+      for (let d = 60; d >= 0; d -= 5) {
+        const date = new Date();
+        date.setDate(date.getDate() - d);
+        _state.tsData.push({
+          date: dateStr(date),
+          ndvi: Math.max(0.1, Math.min(0.95, baseNdvi + (Math.random() - 0.5) * 0.08 + (60 - d) * 0.003))
+        });
+      }
     }
   }
 
