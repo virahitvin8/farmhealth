@@ -477,19 +477,6 @@ const FH_ANALYSIS = (function() {
     } finally {
       $('analyzeBtn').disabled = false;
     }
-
-    // After analysis, force render the health grid on map for visual clarity
-    // (If process API succeeded, grid sits on top of image; if simulated, grid is the main viz)
-    if (_state.analysisData) {
-      showLoading('🎨 Rendering health visualization…', 80);
-      // Ensure the simulatedData flag reflects the actual source
-      // Force renderGrid again with current analysis data to ensure grid is visible
-      try {
-        await FH_API.renderGrid(_state.currentIndex, dateStr, crop.peak, meanNdvi);
-      } catch(e) {
-        console.warn('Re-render for grid only:', e);
-      }
-    }
   }
 
   return {

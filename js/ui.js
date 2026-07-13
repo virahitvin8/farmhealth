@@ -603,11 +603,20 @@ const FH_UI = (function() {
     const colorBar = $('legendColorBar');
     const legendDate = $('legendDate');
     const legendSat = $('legendSat');
+    const legendSource = $('legendSource');
     
     if (!colorBar || !legendDate || !legendSat) return;
     
     legendDate.textContent = dateStr || '--';
     legendSat.textContent = satelliteName || 'Satellite';
+    
+    // Show data source status in legend
+    if (legendSource) {
+      const isSim = _state.simulatedData;
+      legendSource.innerHTML = isSim
+        ? '<span style="color:var(--orange)">🔄 DEMO</span>'
+        : '<span style="color:var(--green)">🛰️ LIVE</span>';
+    }
     
     // Choose color scale based on index type
     const isMoisture = indexType === 'ndmi' || indexType === 'sar' || indexType === 'ndwi';

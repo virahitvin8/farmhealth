@@ -216,6 +216,9 @@ const FH_MAP = (function() {
     hideResults();
     _state.fieldLL = ll;
     _state.fieldCenter = polyCenter(ll);
+    // Reset simulated data flag — new field needs fresh analysis
+    _state.simulatedData = false;
+    _state.analysisData = null;
     _state.fieldPoly = L.polygon(ll, {
       color: '#2ecc71', weight: 2.5, fillOpacity: 0.04, dashArray: '8,4'
     }).addTo(_state.map);
