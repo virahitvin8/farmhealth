@@ -1,11 +1,10 @@
 /* ═══════════════════════════════════════════════════════════
-   FarmHealth — Google Earth Engine Proxy Server
+   FarmHealth — Backend Server
    ═══════════════════════════════════════════════════════════
-   Provides REST endpoints for the FarmHealth frontend to
-   compute NDVI and other indices using Google Earth Engine.
-   
-   Authentication: Uses application_default_credentials.json
-   from gcloud SDK (path configured below).
+   Serves the static frontend and provides API endpoints.
+   Google Earth Engine integration is optional — if the
+   native module fails to load, the server still works and
+   the frontend falls back to simulated/sentinel-hub data.
    
    Run: node server/server.js
    ═══════════════════════════════════════════════════════════ */
@@ -13,7 +12,24 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initialize, ee } = require('@google/earthengine');
+
+// ─── Google Earth Engine (optional) ───
+// The @google/earthengine package has native dependencies that may
+// fail on cloud platforms. We catch the error so the server still runs.
+let geeAvailable = false;
+let ee = null;
+let geeInit = null;
+
+try {
+  const gee = require('@google/earthengine');
+  ee = gee.ee;
+  geeInit = gee.initialize;
+  geeAvailable = true;
+  console.log('[GEE] Earth Engine module loaded successfully');
+} catch (e) {
+  console.warn('[GEE] Earth Engine module not available:', e.message);
+  console.warn('[GEE] Server will start without GEE support. Frontend uses Sentinel Hub / simulated data.');
+}
 
 // ─── Configuration ───
 const PORT = process.env.PORT || 3001;
@@ -32,9 +48,9 @@ let geeInitialized = false;
 let geeInitializing = false;
 
 async function initGEE() {
+  if (!geeAvailable) return false;
   if (geeInitialized) return true;
   if (geeInitializing) {
-    // Wait for initialization in progress
     await new Promise(r => setTimeout(r, 2000));
     return geeInitialized;
   }
@@ -43,13 +59,12 @@ async function initGEE() {
   try {
     console.log(`[GEE] Initializing with credentials from: ${GCLOUD_CREDENTIALS_PATH}`);
     
-    // Initialize using application default credentials with timeout
     const initPromise = new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error('GEE initialization timed out after 15s'));
       }, 15000);
       
-      initialize(null, null, () => {
+      geeInit(null, null, () => {
         clearTimeout(timeout);
         console.log('[GEE] Initialized successfully!');
         geeInitialized = true;
@@ -74,19 +89,25 @@ async function initGEE() {
 }
 
 // ─── Health Check ───
-app.get('/api/gee/health', async (req, res) => {
+app.get('/api/gee/health', (req, res) => {
+  if (!geeAvailable) {
+    return res.json({ status: 'unavailable', initialized: false, message: 'Earth Engine module not loaded' });
+  }
   const status = geeInitialized ? 'connected' : (geeInitializing ? 'initializing' : 'disconnected');
   res.json({ status, initialized: geeInitialized });
 });
 
 // ─── Initialize Endpoint ───
 app.post('/api/gee/init', async (req, res) => {
+  if (!geeAvailable) {
+    return res.status(503).json({ success: false, message: 'Earth Engine not available on this server' });
+  }
   try {
     const success = await initGEE();
     if (success) {
       res.json({ success: true, message: 'GEE initialized' });
     } else {
-      res.status(500).json({ success: false, message: 'GEE initialization failed. Check credentials path.' });
+      res.status(500).json({ success: false, message: 'GEE initialization failed' });
     }
   } catch (e) {
     res.status(500).json({ success: false, message: e.message });
@@ -95,6 +116,9 @@ app.post('/api/gee/init', async (req, res) => {
 
 // ─── Compute NDVI for a Polygon ───
 app.post('/api/gee/ndvi', async (req, res) => {
+  if (!geeAvailable) {
+    return res.status(503).json({ error: 'Earth Engine not available on this server' });
+  }
   try {
     const { coordinates, dateStr, cropPeak, indexType } = req.body;
     
@@ -106,31 +130,25 @@ app.post('/api/gee/ndvi', async (req, res) => {
       return res.status(500).json({ error: 'GEE not initialized' });
     }
 
-    // Build Earth Engine geometry from coordinates
-    // coordinates expected as [[lat, lng], ...]
     const coords = coordinates.map(c => [c[1], c[0]]);
-    coords.push(coords[0]); // close the ring
+    coords.push(coords[0]);
     const geometry = ee.Geometry.Polygon([coords]);
 
-    // Date range
     const startDate = dateStr || new Date().toISOString().split('T')[0];
     const endDate = startDate;
 
-    // Get Sentinel-2 image collection
     const collection = ee.ImageCollection('COPERNICUS/S2_SR')
       .filterBounds(geometry)
       .filterDate(startDate, endDate)
       .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))
       .sort('CLOUDY_PIXEL_PERCENTAGE');
 
-    // Get the least cloudy image
     const image = collection.first();
     
     if (!image) {
       return res.status(404).json({ error: 'No images found for this date/location' });
     }
 
-    // Compute the requested index
     let indexImage;
     switch (indexType || 'ndvi') {
       case 'ndvi':
@@ -158,7 +176,6 @@ app.post('/api/gee/ndvi', async (req, res) => {
         indexImage = image.normalizedDifference(['B8', 'B4']).rename('NDVI');
     }
 
-    // Get statistics
     const stats = indexImage.reduceRegion({
       reducer: ee.Reducer.mean(),
       geometry: geometry,
@@ -173,10 +190,6 @@ app.post('/api/gee/ndvi', async (req, res) => {
       });
     });
 
-    // Compute classification counts using a 256x256 grid
-    const projection = indexImage.projection();
-
-    // Create a sample grid and get pixel values
     const sampled = indexImage.sample({
       region: geometry,
       scale: 10,
@@ -191,7 +204,6 @@ app.post('/api/gee/ndvi', async (req, res) => {
       });
     });
 
-    // Classify into health zones
     const peak = cropPeak || 0.80;
     let cc = [0, 0, 0, 0, 0, 0];
     values.forEach(v => {
@@ -221,8 +233,11 @@ app.post('/api/gee/ndvi', async (req, res) => {
   }
 });
 
-// ─── Compute SAR (Soil Moisture) for a Polygon ───
+// ─── Compute SAR (Soil Moisture) ───
 app.post('/api/gee/sar', async (req, res) => {
+  if (!geeAvailable) {
+    return res.status(503).json({ error: 'Earth Engine not available on this server' });
+  }
   try {
     const { coordinates, dateStr } = req.body;
     
@@ -240,15 +255,14 @@ app.post('/api/gee/sar', async (req, res) => {
 
     const endDate = dateStr ? new Date(dateStr) : new Date();
     const startDate = new Date(endDate);
-    startDate.setDate(startDate.getDate() - 15); // Look back 15 days for a pass
+    startDate.setDate(startDate.getDate() - 15);
 
-    // Sentinel-1 GRD
     const collection = ee.ImageCollection('COPERNICUS/S1_GRD')
       .filterBounds(geometry)
       .filterDate(startDate.toISOString().split('T')[0], endDate.toISOString().split('T')[0])
       .filter(ee.Filter.listContains('transmitterReceiverPolarisation', 'VV'))
       .filter(ee.Filter.eq('instrumentMode', 'IW'))
-      .sort('system:time_start', false); // Get latest
+      .sort('system:time_start', false);
 
     const image = collection.first();
     
@@ -258,7 +272,6 @@ app.post('/api/gee/sar', async (req, res) => {
 
     const vvImage = image.select('VV');
 
-    // Get statistics
     const stats = vvImage.reduceRegion({
       reducer: ee.Reducer.mean(),
       geometry: geometry,
@@ -295,6 +308,9 @@ app.post('/api/gee/sar', async (req, res) => {
 
 // ─── Time Series ───
 app.post('/api/gee/time-series', async (req, res) => {
+  if (!geeAvailable) {
+    return res.status(503).json({ error: 'Earth Engine not available on this server' });
+  }
   try {
     const { coordinates, monthsBack } = req.body;
 
@@ -317,13 +333,11 @@ app.post('/api/gee/time-series', async (req, res) => {
     const startStr = startDate.toISOString().split('T')[0];
     const endStr = endDate.toISOString().split('T')[0];
 
-    // Get all images in time range
     const collection = ee.ImageCollection('COPERNICUS/S2_SR')
       .filterBounds(geometry)
       .filterDate(startStr, endStr)
       .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30));
 
-    // Map over images to get mean NDVI per date
     const withNdvi = collection.map(img => {
       const ndvi = img.normalizedDifference(['B8', 'B4']).rename('NDVI');
       const meanNdvi = ndvi.reduceRegion({
@@ -366,14 +380,15 @@ app.post('/api/gee/time-series', async (req, res) => {
 });
 
 // ─── Start Server ───
-app.listen(PORT, () => {
-  console.log(`\n  🛰️  FarmHealth GEE Proxy Server`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n  🛰️  FarmHealth Server is running!`);
   console.log(`  ─────────────────────────────`);
-  console.log(`  🌐  http://localhost:${PORT}/api/gee`);
+  console.log(`  🌐  http://0.0.0.0:${PORT}`);
   console.log(`  🔌  Endpoints:`);
   console.log(`       GET  /api/gee/health     — Connection status`);
   console.log(`       POST /api/gee/init       — Initialize GEE`);
-  console.log(`       POST /api/gee/ndvi       — Compute NDVI for polygon`);
-  console.log(`       POST /api/gee/time-series — Get NDVI time series`);
-  console.log(`  📋  Credentials: ${GCLOUD_CREDENTIALS_PATH}\n`);
+  console.log(`       POST /api/gee/ndvi       — Compute NDVI`);
+  console.log(`       POST /api/gee/time-series — Time series`);
+  console.log(`  📡  GEE module: ${geeAvailable ? 'LOADED' : 'NOT AVAILABLE (optional)'}`);
+  console.log(`  📋  Serving frontend from: ${path.join(__dirname, '..')}\n`);
 });
