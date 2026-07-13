@@ -441,6 +441,9 @@ const FH_ANALYSIS = (function() {
       const alerts = await generateAlerts();
       renderAlerts(alerts);
 
+      // Professional Data Dashboard
+      FH_UI.renderDataDashboard();
+
       if (_state.mode === 'researcher') {
         showLoading('📉 Computing real time series…', 85);
         if (usedDataSource === 'google-earth-engine') {

@@ -879,6 +879,8 @@ const FH_UI = (function() {
       </div>` : ''}
     `;
     dashboard.style.display = '';
+    const dashCard = $('dashCard');
+    if (dashCard) dashCard.style.display = '';
   }
 
   // Render enhanced scene browser with thumbnails

@@ -31,6 +31,9 @@ const FH = (function() {
       });
     });
 
+    // Load saved fields from localStorage
+    FH_UI.renderSavedFields();
+    
     // Auto-show onboarding on first visit
     if (!localStorage.getItem('fh_onboarding_done')) {
       setTimeout(() => {
