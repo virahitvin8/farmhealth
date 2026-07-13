@@ -392,7 +392,8 @@ const FH_ANALYSIS = (function() {
           meanNdvi = 0.5;
         }
         showLoading('🖼️ Rendering satellite imagery…', 50);
-        gridStats = await FH_API.renderGrid(_state.currentIndex, dateStr, crop.peak);
+        // Pass meanNdvi so simulated fallback matches the reported NDVI
+        gridStats = await FH_API.renderGrid(_state.currentIndex, dateStr, crop.peak, meanNdvi);
       }
 
       _state.analysisData = {

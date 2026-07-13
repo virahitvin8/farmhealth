@@ -240,7 +240,8 @@ const FH_CONFIG = (function() {
       timeAnimScenes: [],
       timeAnimIdx: 0,
       savedFields: [],
-      sceneThumbnails: []
+      sceneThumbnails: [],
+      simulatedData: false
     };
   }
 

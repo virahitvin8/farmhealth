@@ -169,7 +169,7 @@ const FH_API = (function() {
   }
 
   // ═══════════ SENTINEL HUB PROCESS API ═══════════
-  async function renderGrid(indexType, dateStr, cropPeak) {
+  async function renderGrid(indexType, dateStr, cropPeak, preferMean) {
     // Fallback: if Sentinel Hub calls fail, use simulated data
     try {
       const token = await getSHToken();
@@ -239,10 +239,14 @@ const FH_API = (function() {
       });
     } catch (e) {
       console.warn('Sentinel Hub Process API failed, using simulated data:', e);
-      toast('🔄 Using simulated satellite data (real API unavailable)', 'info');
-      // Return simulated data based on a reasonable NDVI for the region
-      const simMean = 0.55 + Math.random() * 0.25;
-      return generateSimulatedGrid(simMean, cropPeak);
+      // Only show toast once on first simulated render
+      if (!_state.simulatedData) {
+        _state.simulatedData = true;
+        toast('🔄 Using simulated satellite data (real API unavailable)', 'info');
+      }
+      // Use the passed preferred mean, or read from existing analysis, or generate a reasonable value
+      const fallbackMean = preferMean || _state.analysisData?.meanNdvi || (0.55 + Math.random() * 0.25);
+      return generateSimulatedGrid(fallbackMean, cropPeak);
     }
   }
 
