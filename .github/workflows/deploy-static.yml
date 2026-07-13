@@ -1,0 +1,113 @@
+# ═══════════════════════════════════════════════════════════
+#  FarmHealth — CD: Deploy Static Frontend to GitHub Pages
+#  ═══════════════════════════════════════════════════════════
+#  Builds the static frontend files and deploys them to
+#  GitHub Pages. The app falls back to Sentinel Hub API
+#  when no backend server is available (GEE proxy won't work).
+#
+#  ⚠️ This deploys a frontend-only version.
+#     For full functionality (GEE proxy), use deploy.yml
+#     or run the Node.js server.
+#  ═══════════════════════════════════════════════════════════
+
+name: Deploy Static Frontend to Pages
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'server/**'
+      - 'Dockerfile'
+  workflow_dispatch:
+    # Allow manual trigger from Actions tab
+
+# Sets permissions of the GITHUB_TOKEN to deploy to Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── Job 1: Build static frontend ───
+  build:
+    name: 🏗️ Build Static Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: ✅ Validate frontend JS syntax
+        run: |
+          for f in js/config.js js/utils.js js/api.js js/map.js js/ui.js js/analysis.js js/app.js; do
+            node -e "const code = require('fs').readFileSync('$f','utf8'); new Function(code); console.log('  ✅ $f');"
+          done
+
+      - name: 🏗️ Build www directory
+        run: |
+          BUILD_DIR="www"
+          rm -rf "$BUILD_DIR"
+          mkdir -p "$BUILD_DIR/css" "$BUILD_DIR/js"
+
+          # Copy frontend files
+          cp index.html "$BUILD_DIR/"
+          cp manifest.json "$BUILD_DIR/"
+          cp sw.js "$BUILD_DIR/"
+          cp -r css/*.css "$BUILD_DIR/css/" 2>/dev/null || true
+          cp -r js/*.js "$BUILD_DIR/js/" 2>/dev/null || true
+
+          # Create .nojekyll for GitHub Pages
+          touch "$BUILD_DIR/.nojekyll"
+
+          echo "✅ Build complete"
+
+      - name: 📤 Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: www
+
+  # ─── Job 2: Deploy to GitHub Pages ───
+  deploy:
+    name: 🚀 Deploy to Pages
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: 🚀 Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: 📋 Deployment summary
+        run: |
+          echo "## ✅ FarmHealth Static Frontend Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🌐 **URL** | ${{ steps.deployment.outputs.page_url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏷️ **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ **Time** | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ℹ️ Notes" >> $GITHUB_STEP_SUMMARY
+          echo "- This is a **frontend-only** deployment" >> $GITHUB_STEP_SUMMARY
+          echo "- Satellite data works via Sentinel Hub API" >> $GITHUB_STEP_SUMMARY
+          echo "- GEE proxy is **not available** (no backend server)" >> $GITHUB_STEP_SUMMARY
+          echo "- For full functionality, use the Cloud Run deployment" >> $GITHUB_STEP_SUMMARY

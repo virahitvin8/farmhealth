@@ -1,0 +1,164 @@
+# ═══════════════════════════════════════════════════════════
+#  FarmHealth — CD: Deploy to Google Cloud Run
+#  ═══════════════════════════════════════════════════════════
+#  Triggered by pushing to main branch.
+#  Builds Docker image, pushes to Google Container Registry
+#  (or Artifact Registry), and deploys to Cloud Run.
+#
+#  Required GitHub Secrets:
+#    - GCP_PROJECT_ID       (Google Cloud project ID)
+#    - GCP_REGION           (e.g., us-central1)
+#    - GCP_SA_KEY           (Service account JSON key)
+#    - GEMINI_API_KEY       (optional, for AI advice)
+#    - SENTINEL_HUB_ID      (optional, override default)
+#    - SENTINEL_HUB_SECRET  (optional, override default)
+#  ═══════════════════════════════════════════════════════════
+
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  SERVICE_NAME: farmhealth
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── Job 1: Deploy to Cloud Run ───
+  deploy:
+    name: 🚀 Deploy to Cloud Run
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # ─── Authenticate with Google Cloud ───
+      - name: 🔑 Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # ─── Setup gcloud SDK ───
+      - name: 🛠️ Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # ─── Docker Auth ───
+      - name: 🐳 Configure Docker for GCR
+        run: gcloud auth configure-docker --quiet
+
+      # ─── Build & Push Docker Image ───
+      - name: 🏗️ Build and push Docker image
+        run: |
+          IMAGE_TAG="gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          LATEST_TAG="gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:latest"
+
+          docker build -t $IMAGE_TAG -t $LATEST_TAG .
+          docker push $IMAGE_TAG
+          docker push $LATEST_TAG
+
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
+
+      # ─── Deploy to Cloud Run ───
+      - name: 🚀 Deploy to Cloud Run
+        id: deploy
+        run: |
+          # Build env vars from secrets (only set if they exist)
+          ENV_VARS="NODE_ENV=production"
+
+          if [ -n "${{ secrets.GEMINI_API_KEY }}" ]; then
+            ENV_VARS="$ENV_VARS,GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}"
+          fi
+
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image "gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ env.SERVICE_NAME }}:${{ github.sha }}" \
+            --platform managed \
+            --region ${{ secrets.GCP_REGION || 'us-central1' }} \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --cpu 1 \
+            --concurrency 80 \
+            --min-instances 0 \
+            --max-instances 2 \
+            --timeout 300 \
+            --set-env-vars "$ENV_VARS"
+
+      # ─── Wait for deployment ───
+      - name: ⏳ Wait for deployment
+        run: |
+          echo "Waiting for deployment to stabilize..."
+          sleep 15
+
+      # ─── Post-deploy health check ───
+      - name: 💚 Health check
+        id: health
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ secrets.GCP_REGION || 'us-central1' }} \
+            --format 'value(status.url)')
+
+          echo "🌐 Service URL: $URL"
+
+          HEALTHY=false
+          for i in $(seq 1 10); do
+            HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' $URL/ 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ App is live! HTTP $HTTP_CODE"
+              HEALTH=$(curl -s $URL/api/gee/health 2>/dev/null || echo '{"status":"check_failed"}')
+              echo "   Health: $HEALTH"
+              echo "app_url=$URL" >> $GITHUB_OUTPUT
+              HEALTHY=true
+              break
+            fi
+            echo "   Waiting for 200... got $HTTP_CODE ($i/10)"
+            sleep 5
+          done
+
+          if [ "$HEALTHY" = "false" ]; then
+            echo "app_url=$URL" >> $GITHUB_OUTPUT
+            echo "⚠️ Health check did not get HTTP 200, but service was deployed. Check logs for details."
+          fi
+
+      # ─── Output deployment URL ───
+      - name: 📋 Deployment summary
+        run: |
+          APP_URL="${{ steps.health.outputs.app_url }}"
+          if [ -z "$APP_URL" ]; then
+            APP_URL="(retrieve via: gcloud run services describe)"
+          fi
+          echo "## ✅ FarmHealth Deployed Successfully" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Detail | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🌐 **URL** | $APP_URL |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📡 **API** | ${APP_URL}/api/gee |" >> $GITHUB_STEP_SUMMARY
+          echo "| 📦 **Image** | \`${{ env.IMAGE_TAG }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🏷️ **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| ⏱️ **Time** | $(date -u '+%Y-%m-%d %H:%M UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Quick Commands" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# View logs" >> $GITHUB_STEP_SUMMARY
+          echo "gcloud logging read \"resource.type=cloud_run_revision AND resource.labels.service_name=${{ env.SERVICE_NAME }}\" --limit 20" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "# Check health" >> $GITHUB_STEP_SUMMARY
+          echo "curl ${APP_URL}/api/gee/health" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

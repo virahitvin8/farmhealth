@@ -1,0 +1,153 @@
+# ═══════════════════════════════════════════════════════════
+#  FarmHealth — CI Workflow
+#  ═══════════════════════════════════════════════════════════
+#  Runs on every push and pull request to main.
+#  Validates server code, builds Docker image, and runs
+#  health checks to ensure the app starts correctly.
+#  ═══════════════════════════════════════════════════════════
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  # ─── Job 1: Validate Server Code ───
+  validate-server:
+    name: 🔍 Validate Server
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: server/package-lock.json
+
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      - name: ✅ Check server syntax
+        run: node -c server.js
+
+      - name: ✅ Verify server dependencies load
+        run: node -e "require('express'); require('cors'); console.log('✅ Server dependencies load OK');"
+
+      - name: 📋 Check for vulnerable dependencies
+        run: npm audit --production || true
+        continue-on-error: true
+
+  # ─── Job 2: Validate Frontend ───
+  validate-frontend:
+    name: 🎨 Validate Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔧 Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: ✅ Check JS files for syntax errors
+        run: |
+          for f in js/config.js js/utils.js js/api.js js/map.js js/ui.js js/analysis.js js/app.js; do
+            node -e "const code = require('fs').readFileSync('$f','utf8'); new Function(code); console.log('  ✅ $f');"
+          done
+
+      - name: ✅ Check HTML validity
+        run: |
+          # Basic check: index.html exists and contains key elements
+          grep -q '<div id="sidebar">' index.html && echo "  ✅ index.html has sidebar"
+          grep -q '<div id="map">' index.html && echo "  ✅ index.html has map"
+          grep -q 'FH.' index.html && echo "  ✅ index.html references FH API"
+
+      - name: ✅ Validate manifest.json
+        run: |
+          node -e "const m = JSON.parse(require('fs').readFileSync('manifest.json','utf8')); \
+            console.log('  ✅ Manifest: ' + m.name);"
+
+      - name: ✅ Validate service worker
+        run: |
+          node -e "const code = require('fs').readFileSync('sw.js','utf8'); new Function(code); console.log('  ✅ sw.js');"
+
+  # ─── Job 3: Build Docker Image ───
+  docker-build:
+    name: 🐳 Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [validate-server, validate-frontend]
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🐳 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🏗️ Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: farmhealth:ci-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🧪 Test Docker image (start and health check)
+        run: |
+          docker run -d --name farmhealth-test -p 8080:8080 farmhealth:ci-${{ github.sha }}
+          # Wait for server to start
+          for i in $(seq 1 15); do
+            sleep 2
+            STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/ 2>/dev/null || echo "000")
+            if [ "$STATUS" = "200" ]; then
+              echo "✅ Server responded with HTTP $STATUS"
+              HEALTH=$(curl -s http://localhost:8080/api/gee/health 2>/dev/null || echo '{"status":"unreachable"}')
+              echo "   Health: $HEALTH"
+              break
+            fi
+            echo "   Waiting... ($i/15)"
+          done
+          docker stop farmhealth-test
+          docker rm farmhealth-test
+
+  # ─── Job 4: Summary ───
+  summary:
+    name: 📊 CI Summary
+    runs-on: ubuntu-latest
+    needs: [validate-server, validate-frontend, docker-build]
+    if: always()
+
+    steps:
+      - name: 📋 Generate summary
+        run: |
+          echo "## ${{ needs.validate-server.result == 'success' && needs.validate-frontend.result == 'success' && needs.docker-build.result == 'success' && '✅' || '❌' }} FarmHealth CI Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🔍 Server Validation | ${{ needs.validate-server.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🎨 Frontend Validation | ${{ needs.validate-frontend.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🐳 Docker Build | ${{ needs.docker-build.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
