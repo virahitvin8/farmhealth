@@ -18,6 +18,16 @@ const FH = (function() {
 
   // ═══════════ INITIALIZATION ═══════════
   function init() {
+    // Initialize Firebase (Google Sign-In + Firestore database)
+    try {
+      if (typeof FH_FIREBASE !== 'undefined' && FH_FIREBASE.init) {
+        FH_FIREBASE.init();
+        console.log('[FH] Firebase initialized');
+      }
+    } catch (e) {
+      console.warn('[FH] Firebase init skipped:', e.message);
+    }
+
     FH_MAP.initMap();
     FH_MAP.initTabs();
     FH_MAP.initFileInput();
@@ -31,7 +41,7 @@ const FH = (function() {
       });
     });
 
-    // Load saved fields from localStorage
+    // Load saved fields from localStorage (and Firestore if logged in)
     FH_UI.renderSavedFields();
     
     // Auto-show onboarding on first visit
@@ -53,6 +63,8 @@ const FH = (function() {
   // All functions exposed for HTML onclick handlers and external access
   return {
     handleLogin: FH_UI.handleLogin,
+    handleGoogleLogin: FH_UI.handleGoogleLogin,
+    selectGoogleAccount: FH_UI.selectGoogleAccount,
     // Map
     setFieldFromCoords: FH_MAP.setFieldFromCoords,
     toggleDraw: FH_MAP.toggleDraw,
@@ -112,6 +124,11 @@ const FH = (function() {
 
     // Settings
     saveSettings: FH_UI.saveSettings,
+    
+    // Firebase Auth
+    signOut: FH_FIREBASE ? FH_FIREBASE.signOut : null,
+    getCurrentUser: FH_FIREBASE ? FH_FIREBASE.getCurrentUser : null,
+    isAdmin: FH_FIREBASE ? FH_FIREBASE.isAdmin : null,
     
     // Professional Features
     toggleFullscreen: FH_MAP.toggleFullscreen,

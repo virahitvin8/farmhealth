@@ -11,7 +11,7 @@
 # SPA redirects: serve index.html for all routes (so the app handles routing)
 [[redirects]]
   from = "/api/*"
-  to = "https://farmhealth-backend.up.railway.app/api/:splat"
+  to = "https://farmhealth-production.up.railway.app/api/:splat"
   status = 200
   force = true
 

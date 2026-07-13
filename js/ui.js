@@ -15,8 +15,15 @@ const FH_UI = (function() {
     _state = state;
   }
 
-  // ═══════════ AUTHENTICATION (Mock) ═══════════
+  // ═══════════ AUTHENTICATION (Enhanced Google & Role Mock) ═══════════
+  const GOOGLE_ACCOUNTS = [
+    { email: 'akshitvinay4636@gmail.com', name: 'Akshit Vinay', role: 'admin', img: '🧔' },
+    { email: 'akshitvinay@gmail.com', name: 'Akshit Vinay (Backup)', role: 'admin', img: '👨' },
+    { email: 'guest.farmer@gmail.com', name: 'Guest Farmer', role: 'user', img: '🧑‍🌾' }
+  ];
+
   function checkLoginState() {
+    // Firebase is already initialized by app.js init()
     const role = localStorage.getItem('fh_auth_role');
     if (!role) {
       document.getElementById('loginModal').classList.add('show');
@@ -30,14 +37,24 @@ const FH_UI = (function() {
     const pass = $('loginPass').value.trim();
     const err = $('loginError');
 
-    if (user === 'admin' && pass === 'admin') {
+    const adminEmails = [
+      'akshitvinay4636@gmail.com',
+      'akshitvinay@gmail.com',
+      'akshitvinay4636y@gmail.com'
+    ];
+
+    if (adminEmails.includes(user.toLowerCase()) || (user.toLowerCase() === 'admin' && pass === 'admin') || (user.toLowerCase() === 'admin' && pass === '')) {
       localStorage.setItem('fh_auth_role', 'admin');
+      localStorage.setItem('fh_auth_email', user.includes('@') ? user : 'akshitvinay4636@gmail.com');
+      localStorage.setItem('fh_auth_name', 'Akshit Vinay');
       err.style.display = 'none';
       document.getElementById('loginModal').classList.remove('show');
       applyRoleUI('admin');
-      toast('Welcome back, Admin!');
-    } else if (user === 'user' && pass === 'user') {
+      toast('Welcome back, Admin Akshit!');
+    } else if (user.toLowerCase() === 'user' && (pass === 'user' || pass === '')) {
       localStorage.setItem('fh_auth_role', 'user');
+      localStorage.setItem('fh_auth_email', 'user@farmhealth.com');
+      localStorage.setItem('fh_auth_name', 'Standard User');
       err.style.display = 'none';
       document.getElementById('loginModal').classList.remove('show');
       applyRoleUI('user');
@@ -45,6 +62,51 @@ const FH_UI = (function() {
     } else {
       err.style.display = 'block';
     }
+  }
+
+  async function handleGoogleLogin() {
+    // Try real Firebase Google Sign-In first
+    if (typeof FH_FIREBASE !== 'undefined' && FH_FIREBASE.signInWithGoogle) {
+      const result = await FH_FIREBASE.signInWithGoogle();
+      if (result && result.success) {
+        // Firebase onAuthStateChanged will handle UI updates
+        return;
+      }
+      console.warn('[Auth] Firebase Google Sign-In failed, falling back to mock:', result?.error);
+    }
+    
+    // Fallback: mock Google account picker (for demo/testing without Firebase)
+    const listEl = $('googleAccountsList');
+    if (listEl) {
+      listEl.innerHTML = GOOGLE_ACCOUNTS.map(acc => `
+        <div onclick="FH.selectGoogleAccount('${acc.email}')" style="display:flex; align-items:center; gap:12px; padding:10px 14px; border-bottom:1px solid #f1f3f4; cursor:pointer; transition:background 0.2s; border-radius:4px;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='transparent'">
+          <div style="width:36px; height:36px; border-radius:50%; background:#e8f0fe; display:flex; align-items:center; justify-content:center; font-size:1.2rem;">${acc.img}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:500; font-size:0.88rem; color:#3c4043; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${acc.name}</div>
+            <div style="font-size:0.75rem; color:#5f6368; text-overflow:ellipsis; overflow:hidden; white-space:nowrap;">${acc.email}</div>
+          </div>
+          <div style="font-size:0.7rem; color:#1e7d32; font-weight:bold; border: 1px solid #1e7d32; padding: 2px 6px; border-radius: 4px; text-transform:uppercase;">${acc.role}</div>
+        </div>
+      `).join('');
+    }
+    // Hide login modal, show google modal
+    document.getElementById('loginModal').classList.remove('show');
+    document.getElementById('googleModal').style.display = 'flex';
+  }
+
+  function selectGoogleAccount(email) {
+    const acc = GOOGLE_ACCOUNTS.find(a => a.email === email);
+    if (!acc) return;
+    
+    localStorage.setItem('fh_auth_role', acc.role);
+    localStorage.setItem('fh_auth_email', acc.email);
+    localStorage.setItem('fh_auth_name', acc.name);
+    
+    document.getElementById('googleModal').style.display = 'none';
+    document.getElementById('loginModal').classList.remove('show');
+    
+    applyRoleUI(acc.role);
+    toast(`Successfully logged in via Google as ${acc.name}!`, 'ok');
   }
 
   function applyRoleUI(role) {
@@ -591,7 +653,9 @@ const FH_UI = (function() {
     if (step.target) {
       const target = document.querySelector(step.target);
       if (target) {
-        target.classList.add('onboard-highlight-target');
+        if (step.target !== '#map') {
+          target.classList.add('onboard-highlight-target');
+        }
         // Scroll sidebar to show target
         const sidebar = document.getElementById('sidebar');
         if (sidebar && step.target.startsWith('#') && step.target !== '#map') {
@@ -914,6 +978,8 @@ const FH_UI = (function() {
     setStateRef,
     checkLoginState,
     handleLogin,
+    handleGoogleLogin,
+    selectGoogleAccount,
     renderScenes,
     selectScene,
     renderEnhancedScenes,

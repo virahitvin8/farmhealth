@@ -17,6 +17,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.14.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.14.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.14.0/firebase-firestore-compat.js"></script>
+
 <!-- Application Styles -->
 <link rel="stylesheet" href="css/style.css">
 </head>
@@ -425,14 +430,43 @@
 
 <!-- ═══ MODALS ═══ -->
 <div class="modal-overlay" id="loginModal" style="display:none; z-index:9999; background:rgba(0,0,0,0.85)">
-  <div class="modal" style="max-width:350px; text-align:center">
+  <div class="modal" style="max-width:350px; text-align:center; padding: 20px;">
     <h2>🔐 Secure Login</h2>
     <p style="font-size:0.85rem; color:var(--text-dim); margin-bottom:15px">FarmHealth Platform Access</p>
-    <input type="text" id="loginUser" placeholder="Username" style="width:100%; margin-bottom:10px; text-align:center">
+    <input type="text" id="loginUser" placeholder="Username or Email" style="width:100%; margin-bottom:10px; text-align:center">
     <input type="password" id="loginPass" placeholder="Password" style="width:100%; margin-bottom:15px; text-align:center">
     <button class="btn-primary" onclick="FH.handleLogin()" style="width:100%">Login</button>
     <div id="loginError" style="color:var(--poor); font-size:0.8rem; margin-top:10px; display:none">Invalid credentials</div>
-    <div style="font-size:0.75rem; color:var(--text-dim); margin-top:15px">Admin: admin/admin | User: user/user</div>
+    
+    <div style="margin: 15px 0; display:flex; align-items:center; justify-content:center; gap:10px;">
+      <div style="flex:1; height:1px; background:var(--border-light)"></div>
+      <span style="font-size:0.75rem; color:var(--text-faint)">OR</span>
+      <div style="flex:1; height:1px; background:var(--border-light)"></div>
+    </div>
+    
+    <button class="google-login-btn" onclick="FH.handleGoogleLogin()" style="width:100%; display:flex; align-items:center; justify-content:center; gap:8px; background:#fff; color:#1f1f1f; border:1px solid #dadce0; border-radius:8px; padding:10px 16px; font-weight:600; cursor:pointer;">
+      <svg width="18" height="18" viewBox="0 0 18 18" style="margin-right:4px;"><path d="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.47h4.84c-.21 1.12-.84 2.07-1.79 2.7v2.24h2.9c1.69-1.55 2.69-3.84 2.69-6.57z" fill="#4285F4"/><path d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.24c-.8.54-1.84.87-3.06.87-2.35 0-4.34-1.58-5.05-3.7H.95v2.3C2.43 15.89 5.5 18 9 18z" fill="#34A853"/><path d="M3.95 10.75c-.18-.54-.28-1.12-.28-1.75s.1-1.21.28-1.75V4.95H.95A8.99 8.99 0 000 9c0 1.54.39 3.03 1.07 4.35l2.88-2.6z" fill="#FBBC05"/><path d="M9 3.58c1.32 0 2.5.45 3.44 1.35L15 2.3C13.46.86 11.42 0 9 0 5.5 0 2.43 2.11.95 5.09l2.9 2.24c.72-2.19 2.7-3.75 5.15-3.75z" fill="#EA4335"/></svg>
+      Sign in with Google
+    </button>
+
+    <div style="font-size:0.75rem; color:var(--text-dim); margin-top:20px">
+      Admin Email: <b>akshitvinay4636@gmail.com</b><br>
+      Standard login: admin/admin or user/user
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="googleModal" style="display:none; z-index:10000; background:rgba(0,0,0,0.85)">
+  <div class="modal" style="max-width:360px; text-align:center; padding: 24px; background: #fff; color: #3c4043; border-radius: 8px;">
+    <svg width="24" height="24" viewBox="0 0 24 24" style="margin-bottom:12px;"><path d="M21.35 11.1h-9.17v2.73h6.51c-.33 1.56-1.56 2.95-3.24 3.75v3.08h5.27c3.08-2.85 4.88-7.06 4.88-11.9 0-.62-.06-1.21-.15-1.82z" fill="#4285F4"/><path d="M12.18 21.43c2.75 0 5.06-.92 6.75-2.5l-5.27-3.08c-.76.51-1.78.83-3.18.83-3.07 0-5.66-2.11-6.59-4.94H1.3v3.19c1.9 3.79 5.8 6.5 10.88 6.5z" fill="#34A853"/><path d="M5.59 11.74c-.13-.42-.2-.86-.2-1.3s.07-.88.2-1.3V5.95H1.3A11.89 11.89 0 000 10.44c0 1.63.33 3.19.92 4.6l4.67-3.3z" fill="#FBBC05"/><path d="M12.18 2.87c1.78 0 3.2.62 4.3 1.64l3.24-3.24C17.72.63 15.22 0 12.18 0 7.1 0 3.2 2.71 1.3 6.5l4.67 3.3c.93-2.83 3.52-4.93 6.59-4.93z" fill="#EA4335"/></svg>
+    <h3 style="margin: 0 0 8px; font-size:1.2rem; color:#202124; font-family: 'Google Sans',Roboto,Arial,sans-serif;">Choose an account</h3>
+    <p style="font-size:0.85rem; color:#5f6368; margin-bottom:20px; font-family: Roboto,Arial,sans-serif;">to continue to <span style="color:#1e7d32; font-weight:600;">FarmHealth</span></p>
+    
+    <div id="googleAccountsList" style="display:flex; flex-direction:column; gap:4px; margin-bottom:24px; text-align:left;">
+      <!-- Accounts will be injected dynamically -->
+    </div>
+    
+    <button class="btn-secondary" onclick="FH.closeModal('googleModal')" style="width:100%; border: 1px solid #dadce0; background: #fff; color: #3c4043;">Cancel</button>
   </div>
 </div>
 <div class="modal-overlay" id="learningModal">
@@ -507,6 +541,7 @@
 <script src="js/map.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/analysis.js"></script>
+<script src="js/firebase.js"></script>
 <script src="js/app.js"></script>
 <script>
 // Register service worker for PWA offline support
