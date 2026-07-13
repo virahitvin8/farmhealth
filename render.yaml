@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════
+#  FarmHealth — Render Blueprint (Infrastructure as Code)
+#  ═══════════════════════════════════════════════════════════
+#  Deploys the Node.js Express backend (GEE proxy server)
+#  with the static frontend bundled together.
+#  ═══════════════════════════════════════════════════════════
+#
+#  How to use:
+#    1. Push this file to your GitHub repo
+#    2. Go to https://dashboard.render.com/blueprints
+#    3. Connect your GitHub repo -> Render auto-detects this file
+#    4. Click "Apply" — it creates the web service automatically
+#
+#  The server listens on PORT (set by Render) and binds to 0.0.0.0
+#  Health check at /api/gee/health
+#
+#  After deployment:
+#    1. Copy your Render URL (e.g., farmhealth.onrender.com)
+#    2. Update netlify.toml's proxy URL to point to it
+#    3. Push that change to sync frontend → backend proxy
+#  ═══════════════════════════════════════════════════════════
+
+services:
+  - type: web
+    name: farmhealth-backend
+    runtime: node
+    region: singapore  # Closest to India for low latency
+    plan: free
+    buildCommand: npm install
+    startCommand: node server/server.js
+    healthCheckPath: /api/gee/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      # ⚠️ For Google Earth Engine, add your service account key:
+      # - key: GOOGLE_APPLICATION_CREDENTIALS
+      #   value: /etc/secrets/gee-credentials.json
+      # Then mount the secret file in Render dashboard
