@@ -74,9 +74,10 @@ const FH_CONFIG = (function() {
     SH_AUTH: 'https://services.sentinel-hub.com/oauth/token',
     SH_STATISTICS: 'https://services.sentinel-hub.com/api/v1/statistics',
     SH_PROCESS: 'https://services.sentinel-hub.com/api/v1/process',
-    GEE_PROXY: (typeof window !== 'undefined' && window.location ? 
-      window.location.origin + '/api/gee' : 
-      'http://localhost:3001/api/gee')
+    GEE_PROXY: (typeof window !== 'undefined' && window.location && 
+                 window.location.protocol.startsWith('http'))
+      ? window.location.origin + '/api/gee'
+      : 'https://farmhealth-backend.onrender.com/api/gee'
   };
 
   // ─── Guided Onboarding Steps ───

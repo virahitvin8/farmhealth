@@ -1,8 +1,14 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════════════
-#  FarmHealth — Build script for Linux/Mac
+#  FarmHealth — Build Script for Linux/Mac
 #  ═══════════════════════════════════════════════════════════
-#  Bundles the app files into a www/ directory for deployment
+#  Builds the www/ folder for web deployment AND syncs to
+#  the Capacitor Android project for mobile app builds.
+#
+#  Usage:
+#    ./build.sh              # Build web assets + copy to Android
+#    ./build.sh --apk        # Build web assets + build APK
+#    ./build.sh --deploy     # Full pipeline: build + APK + commit
 #  ═══════════════════════════════════════════════════════════
 
 set -e
@@ -14,42 +20,56 @@ echo ""
 
 BUILD_DIR="www"
 
-# Clean build directory
+# Clean and recreate build directory
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
-mkdir -p "$BUILD_DIR/css"
-mkdir -p "$BUILD_DIR/js"
-mkdir -p "$BUILD_DIR/server"
 
-# Copy frontend files
+# ─── Copy Frontend Files ───
 echo "📦 Copying frontend files..."
 cp index.html "$BUILD_DIR/"
 cp manifest.json "$BUILD_DIR/"
 cp sw.js "$BUILD_DIR/"
-cp -r css/*.css "$BUILD_DIR/css/" 2>/dev/null || true
-cp -r js/*.js "$BUILD_DIR/js/" 2>/dev/null || true
+cp -r css "$BUILD_DIR/css"
+cp -r js "$BUILD_DIR/js"
+cp -r assets "$BUILD_DIR/" 2>/dev/null || true
 
-# Copy server files
-echo "📦 Copying server files..."
-cp -r server/server.js "$BUILD_DIR/server/"
-cp server/package.json "$BUILD_DIR/server/"
+echo "  ✅ www/ built: $(ls -la www/index.html | awk '{print $5}') bytes"
 
-# Copy Docker configuration
-echo "📦 Copying deployment files..."
-cp Dockerfile "$BUILD_DIR/" 2>/dev/null || true
-cp .dockerignore "$BUILD_DIR/" 2>/dev/null || true
+# ─── Sync to Capacitor Android (optional) ───
+if command -v npx &> /dev/null && [ -d "android" ]; then
+  echo "📱 Syncing to Capacitor Android..."
+  npx cap copy android
+  echo "  ✅ Android project synced!"
+fi
 
-# Install server dependencies
-echo "📦 Installing server dependencies..."
-cd "$BUILD_DIR/server"
-npm install --omit=dev 2>/dev/null
-cd ../..
+# ─── Build Android APK (optional, --apk flag) ───
+if [ "$1" = "--apk" ] || [ "$1" = "--deploy" ]; then
+  if [ -f "android/gradlew" ]; then
+    echo "🔨 Building Android APK..."
+    cd android
+    ./gradlew assembleDebug
+    cd ..
+    APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+    if [ -f "$APK_PATH" ]; then
+      echo "  ✅ APK built: $APK_PATH"
+      ls -lh "$APK_PATH"
+    fi
+  fi
+fi
+
+# ─── Git commit (optional, --deploy flag) ───
+if [ "$1" = "--deploy" ]; then
+  echo "📤 Committing and pushing to GitHub..."
+  git add -A
+  git commit -m "Build: www + Android sync $(date +%Y-%m-%d)"
+  git push origin main
+  echo "  ✅ Pushed to GitHub!"
+fi
 
 echo ""
-echo "  ✅ Build complete! Files in www/ directory"
-echo "  📂 $(pwd)/$BUILD_DIR"
-echo ""
-echo "  🚀 To run locally:"
-echo "     node server/server.js"
-echo "     Then open http://localhost:3001"
+echo "  ✅ Build complete!"
+echo "  📂 www/  — Web assets for static deploy"
+if [ -f "android/app/build/outputs/apk/debug/app-debug.apk" ]; then
+  echo "  📱 APK: android/app/build/outputs/apk/debug/app-debug.apk"
+fi
 echo ""
