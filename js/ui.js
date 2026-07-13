@@ -54,7 +54,7 @@ const FH_UI = (function() {
     }
   }
 
-  // ═══════════ SATELLITE SCENES RENDER ═══════════
+  // ═══════════ SATELLITE SCENES RENDER (Enhanced) ═══════════
   function renderScenes() {
     const el = $('scenesList');
     if (!_state.scenes.length) {
@@ -62,16 +62,21 @@ const FH_UI = (function() {
       return;
     }
     el.innerHTML = _state.scenes.map((s, i) => {
-      const cloudBg = s.cloud < 10 ? 'var(--green)' : s.cloud < 25 ? 'var(--orange)' : 'var(--red)';
+      const cloudPct = s.cloud;
+      const cloudBg = cloudPct < 10 ? '#2ecc71' : cloudPct < 25 ? '#f39c12' : '#e74c3c';
+      const quality = cloudPct < 10 ? 'Excellent' : cloudPct < 25 ? 'Good' : 'Poor';
       return `<div class="scene-item ${i === 0 ? 'active' : ''}" onclick="FH.selectScene(${i})">
-        <div style="flex:1">
+        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a3826,#0d2013);display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:6px;font-size:1.3rem">🛰️</div>
+        <div style="flex:1;min-width:0">
           <div class="scene-date">📅 ${s.date}</div>
-          <div class="scene-cloud">☁️ ${s.cloud}% cloud cover</div>
+          <div class="scene-cloud">☁️ ${cloudPct}% · ${quality}</div>
         </div>
-        <span class="scene-badge" style="background:${cloudBg};color:#fff">${s.cloud}%</span>
+        <div style="text-align:right">
+          <span class="scene-badge" style="background:${cloudBg};color:#fff">${cloudPct}%</span>
+          <div style="font-size:0.6rem;color:var(--text-faint);margin-top:2px">Sentinel-2 L2A</div>
+        </div>
       </div>`;
     }).join('');
-
     $('scenesCard').style.display = '';
     if (_state.scenes.length > 0) selectScene(0);
   }
@@ -778,12 +783,138 @@ const FH_UI = (function() {
     }).join('');
   }
 
+  // ═══════════ PROFESSIONAL UI COMPONENTS ═══════════
+  
+  // Render saved fields list
+  function renderSavedFields() {
+    const container = $('savedFieldsList');
+    if (!container) return;
+    const saved = FH_MAP.loadSavedFields();
+    
+    if (!saved.length) {
+      container.innerHTML = '<div class="advice info" style="font-size:0.75rem">No saved fields yet. Run an analysis and save it!</div>';
+      return;
+    }
+    
+    container.innerHTML = saved.map((f, idx) => {
+      const ndviStr = f.ndvi ? `NDVI: ${f.ndvi.toFixed(3)}` : '';
+      const dateStr = new Date(f.date).toLocaleDateString();
+      const safeName = f.name.replace(/'/g, '\\x27');
+      return `<div class="saved-field-item" onclick="FH.loadFieldFromSaved(${idx})">
+        <div class="saved-field-info">
+          <div class="saved-field-name">📍 ${safeName}</div>
+          <div class="saved-field-meta">${dateStr} ${ndviStr}</div>
+        </div>
+        <button class="saved-field-del" onclick="event.stopPropagation(); FH.deleteSavedField('${f.id}')">✕</button>
+      </div>`;
+    }).join('');
+  }
+  
+  // Render professional data dashboard
+  function renderDataDashboard() {
+    const ad = _state.analysisData;
+    const w = _state.weatherData?.forecast?.current;
+    const t = _state.terrainData;
+    const s = _state.soilData;
+    if (!ad) return;
+    
+    const dashboard = $('dataDashboard');
+    if (!dashboard) return;
+    
+    const score = Math.round(Math.min(100, (ad.meanNdvi / ad.crop.peak) * 115));
+    const prob = ((ad.cc[0] + ad.cc[1] + ad.cc[2]) / ad.cnt * 100).toFixed(1);
+    
+    dashboard.innerHTML = `
+      <div class="dashboard-grid">
+        <div class="dashboard-card">
+          <div class="dash-label">Crop Health</div>
+          <div class="dash-value ${score < 50 ? 'dash-bad' : score < 70 ? 'dash-warn' : 'dash-good'}">${score}%</div>
+          <div class="dash-trend">${score > 70 ? '📈 Thriving' : score > 50 ? '📊 Monitor' : '📉 Critical'}</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="dash-label">NDVI</div>
+          <div class="dash-value">${ad.meanNdvi.toFixed(3)}</div>
+          <div class="dash-trend">Peak: ${ad.crop.peak}</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="dash-label">Problem Area</div>
+          <div class="dash-value ${prob > 30 ? 'dash-bad' : prob > 15 ? 'dash-warn' : 'dash-good'}">${prob}%</div>
+          <div class="dash-trend">${prob > 30 ? '🚨 Needs attention' : '✅ Acceptable'}</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="dash-label">Temperature</div>
+          <div class="dash-value">${w ? w.temperature_2m.toFixed(1) + '°C' : '--'}</div>
+          <div class="dash-trend">${w && w.temperature_2m > 35 ? '🌡️ Heat stress' : w ? '✅ Normal' : ''}</div>
+        </div>
+        ${t ? `
+        <div class="dashboard-card">
+          <div class="dash-label">Elevation</div>
+          <div class="dash-value">${t.eMean.toFixed(0)}m</div>
+          <div class="dash-trend">Range: ${t.eMin.toFixed(0)}-${t.eMax.toFixed(0)}m</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="dash-label">Slope</div>
+          <div class="dash-value">${t.avgSlope.toFixed(1)}°</div>
+          <div class="dash-trend">${t.drainClass}</div>
+        </div>` : ''}
+        ${s ? `
+        <div class="dashboard-card">
+          <div class="dash-label">Soil pH</div>
+          <div class="dash-value">${s.phh2o ? (s.phh2o/10).toFixed(1) : '--'}</div>
+          <div class="dash-trend">${s.phh2o ? (s.phh2o/10 > 7.5 ? 'Alkaline' : s.phh2o/10 < 6.0 ? 'Acidic' : 'Neutral') : ''}</div>
+        </div>
+        <div class="dashboard-card">
+          <div class="dash-label">Organic Carbon</div>
+          <div class="dash-value">${s.soc ? (s.soc/10).toFixed(1) + 'g/kg' : '--'}</div>
+          <div class="dash-trend">${s.soc && s.soc/10 > 1.5 ? '✅ Healthy' : s.soc ? '⚠️ Low' : ''}</div>
+        </div>` : ''}
+      </div>
+      ${_state.tsData.length > 1 ? `
+      <div class="dashboard-timeline">
+        <div class="dash-timeline-label">NDVI Time Series (${_state.tsData.length} points)</div>
+        <div class="dash-timeline-bars">${_state.tsData.slice(-10).map((d, i, arr) => {
+          const h = Math.max(8, (d.ndvi / Math.max(...arr.map(x => x.ndvi))) * 40);
+          return `<div class="dash-bar" style="height:${h}px" title="${d.date}: ${d.ndvi.toFixed(3)}"></div>`;
+        }).join('')}</div>
+      </div>` : ''}
+    `;
+    dashboard.style.display = '';
+  }
+
+  // Render enhanced scene browser with thumbnails
+  function renderEnhancedScenes() {
+    const el = $('scenesList');
+    if (!_state.scenes.length) {
+      el.innerHTML = '<div class="advice info">No scenes found. Adjust settings and try again.</div>';
+      return;
+    }
+    el.innerHTML = _state.scenes.map((s, i) => {
+      const cloudPct = s.cloud;
+      const cloudBg = cloudPct < 10 ? '#2ecc71' : cloudPct < 25 ? '#f39c12' : '#e74c3c';
+      const quality = cloudPct < 10 ? 'Excellent' : cloudPct < 25 ? 'Good' : 'Poor';
+      return `<div class="scene-item ${i === 0 ? 'active' : ''}" onclick="FH.selectScene(${i})" data-idx="${i}">
+        <div class="scene-thumb" style="background:linear-gradient(135deg,#1a3826,#0d2013);display:flex;align-items:center;justify-content:center;width:48px;height:48px;border-radius:6px;font-size:1.3rem">🛰️</div>
+        <div style="flex:1;min-width:0">
+          <div class="scene-date">📅 ${s.date}</div>
+          <div class="scene-cloud">☁️ ${cloudPct}% · ${quality}</div>
+        </div>
+        <div style="text-align:right">
+          <span class="scene-badge" style="background:${cloudBg};color:#fff">${cloudPct}%</span>
+          <div style="font-size:0.6rem;color:var(--text-faint);margin-top:2px">Sentinel-2 L2A</div>
+        </div>
+      </div>`;
+    }).join('');
+    $('scenesCard').style.display = '';
+    if (_state.scenes.length > 0) selectScene(0);
+  }
+
   return {
     setStateRef,
     checkLoginState,
     handleLogin,
     renderScenes,
     selectScene,
+    renderEnhancedScenes,
     renderWeather,
     renderTerrain,
     renderSoil,
@@ -816,6 +947,8 @@ const FH_UI = (function() {
     nextOnboardingStep,
     prevOnboardingStep,
     skipOnboarding,
-    finishOnboarding
+    finishOnboarding,
+    renderSavedFields,
+    renderDataDashboard
   };
 })();

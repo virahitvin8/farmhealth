@@ -108,6 +108,19 @@ const FH = (function() {
     showFullReport: FH_ANALYSIS.showFullReport,
 
     // Settings
-    saveSettings: FH_UI.saveSettings
+    saveSettings: FH_UI.saveSettings,
+    
+    // Professional Features
+    toggleFullscreen: FH_MAP.toggleFullscreen,
+    enableCompare: FH_MAP.enableCompare,
+    disableCompare: FH_MAP.disableCompare,
+    startTimeAnimation: FH_MAP.startTimeAnimation,
+    stopTimeAnimation: FH_MAP.stopTimeAnimation,
+    toggleTimeAnimation: FH_MAP.toggleTimeAnimation,
+    saveCurrentField: FH_MAP.saveCurrentField,
+    loadFieldFromSaved: FH_MAP.loadFieldFromSaved,
+    deleteSavedField: FH_MAP.deleteSavedField,
+    renderSavedFields: FH_UI.renderSavedFields,
+    renderDataDashboard: FH_UI.renderDataDashboard
   };
 })();

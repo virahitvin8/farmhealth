@@ -362,6 +362,185 @@ const FH_MAP = (function() {
     return [];
   }
 
+  // ═══════════ FULLSCREEN MAP ═══════════
+  function toggleFullscreen() {
+    const mapArea = document.getElementById('mapArea');
+    const sidebar = document.getElementById('sidebar');
+    if (!_state.fullscreen) {
+      _state.fullscreen = true;
+      sidebar.style.display = 'none';
+      mapArea.style.width = '100vw';
+      mapArea.style.height = '100vh';
+      setTimeout(() => _state.map.invalidateSize(), 100);
+      toast('🗺️ Fullscreen mode — press Esc to exit');
+    } else {
+      _state.fullscreen = false;
+      sidebar.style.display = '';
+      mapArea.style.width = '';
+      mapArea.style.height = '';
+      setTimeout(() => _state.map.invalidateSize(), 100);
+      toast('🗺️ Exited fullscreen');
+    }
+  }
+
+  // ═══════════ SPLIT-VIEW COMPARISON ═══════════
+  let _splitActive = false;
+  let _splitRightLayer = null;
+
+  function enableCompare(layerType, dateStr) {
+    if (!_state.fieldPoly) return toast('⚠️ Select a field first', 'err');
+    if (_splitActive) disableCompare();
+
+    _splitActive = true;
+    _state.compareMode = true;
+    _state.compareLayer = layerType || _state.currentIndex;
+    _state.compareDate = dateStr || (_state.selectedScene ? _state.selectedScene.date : null);
+
+    // Show the compare bar overlay
+    const bar = document.getElementById('compareBar');
+    if (bar) bar.classList.add('show');
+
+    toast('🔀 Split-view enabled — swipe to compare');
+    FH_ANALYSIS.switchLayer(layerType || _state.currentIndex);
+  }
+
+  function disableCompare() {
+    if (!_splitActive) return;
+    _splitActive = false;
+    _state.compareMode = false;
+    _state.compareLayer = null;
+    _state.compareDate = null;
+    
+    // Hide the compare bar overlay
+    const bar = document.getElementById('compareBar');
+    if (bar) bar.classList.remove('show');
+    
+    toast('🔀 Split-view disabled');
+  }
+
+  // ═══════════ TIME ANIMATION ═══════════
+  function startTimeAnimation(scenes) {
+    if (!scenes || scenes.length < 2) {
+      return toast('⚠️ Need at least 2 scenes for animation', 'err');
+    }
+
+    if (_state.timeAnimating) {
+      stopTimeAnimation();
+      return;
+    }
+
+    _state.timeAnimScenes = scenes;
+    _state.timeAnimIdx = 0;
+    _state.timeAnimating = true;
+
+    // Show animation controls
+    const controls = document.getElementById('animControls');
+    if (controls) controls.classList.add('show');
+    const progress = document.getElementById('animProgress');
+    if (progress) progress.textContent = `1/${scenes.length}`;
+
+    toast('▶️ Animation started — click again to stop');
+    animateNextFrame();
+  }
+
+  // ─── Convenience wrapper: reads scenes from internal state ───
+  function toggleTimeAnimation() {
+    if (!_state.scenes || _state.scenes.length < 2) {
+      return toast('⚠️ Run analysis first to get satellite scenes', 'err');
+    }
+    if (_state.timeAnimating) {
+      stopTimeAnimation();
+    } else {
+      startTimeAnimation(_state.scenes);
+    }
+  }
+
+  function animateNextFrame() {
+    if (!_state.timeAnimating || !_state.timeAnimScenes.length) {
+      stopTimeAnimation();
+      return;
+    }
+
+    const scene = _state.timeAnimScenes[_state.timeAnimIdx];
+    _state.selectedScene = scene;
+
+    // Update animation date display
+    const animDateEl = document.getElementById('animDate');
+    if (animDateEl) animDateEl.textContent = scene.date || '--';
+    const progress = document.getElementById('animProgress');
+    if (progress) progress.textContent = `${_state.timeAnimIdx + 1}/${_state.timeAnimScenes.length}`;
+
+    if (_state.analysisData) {
+      FH_ANALYSIS.switchLayer(_state.currentIndex);
+    }
+
+    _state.timeAnimIdx = (_state.timeAnimIdx + 1) % _state.timeAnimScenes.length;
+    _state.timeAnimFrame = setTimeout(() => animateNextFrame(), 1500);
+  }
+
+  function stopTimeAnimation() {
+    _state.timeAnimating = false;
+    if (_state.timeAnimFrame) {
+      clearTimeout(_state.timeAnimFrame);
+      _state.timeAnimFrame = null;
+    }
+    
+    // Hide animation controls
+    const controls = document.getElementById('animControls');
+    if (controls) controls.classList.remove('show');
+    
+    toast('⏹️ Animation stopped');
+  }
+
+  // ═══════════ SAVED FIELDS ═══════════
+  function saveCurrentField(name) {
+    if (!_state.fieldLL.length) return toast('⚠️ No field to save', 'err');
+    const field = {
+      id: Date.now().toString(36),
+      name: name || `Field ${_state.savedFields.length + 1}`,
+      coords: _state.fieldLL,
+      center: _state.fieldCenter,
+      crop: $('cropSelect')?.value || 'generic',
+      stage: $('stageSelect')?.value || 'mid',
+      date: new Date().toISOString(),
+      ndvi: _state.analysisData?.meanNdvi || null
+    };
+
+    _state.savedFields.push(field);
+    localStorage.setItem('fh_saved_fields', JSON.stringify(_state.savedFields));
+    toast(`💾 Saved: ${field.name}`);
+    return field;
+  }
+
+  function loadSavedFields() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('fh_saved_fields') || '[]');
+      _state.savedFields = saved;
+      return saved;
+    } catch (e) {
+      _state.savedFields = [];
+      return [];
+    }
+  }
+
+  function loadFieldFromSaved(fieldOrIdx) {
+    let field = fieldOrIdx;
+    if (typeof fieldOrIdx === 'number') {
+      field = _state.savedFields[fieldOrIdx];
+    }
+    if (!field || !field.coords) return toast('⚠️ Invalid saved field', 'err');
+    setFieldBoundary(field.coords);
+    if (field.crop && $('cropSelect')) $('cropSelect').value = field.crop;
+    if (field.stage && $('stageSelect')) $('stageSelect').value = field.stage;
+    toast(`📌 Loaded: ${field.name}`);
+  }
+
+  function deleteSavedField(id) {
+    _state.savedFields = _state.savedFields.filter(f => f.id !== id);
+    localStorage.setItem('fh_saved_fields', JSON.stringify(_state.savedFields));
+    FH_UI.renderSavedFields();
+  }
+
   // ═══════════ TABS ═══════════
   function initTabs() {
     document.querySelectorAll('#fieldTabs .tab').forEach(t => t.addEventListener('click', () => {
@@ -389,6 +568,17 @@ const FH_MAP = (function() {
     initTabs,
     startGpsWalk,
     dropGpsPin,
-    finishGpsWalk
+    finishGpsWalk,
+    // Professional Features
+    toggleFullscreen,
+    enableCompare,
+    disableCompare,
+    startTimeAnimation,
+    stopTimeAnimation,
+    toggleTimeAnimation,
+    saveCurrentField,
+    loadSavedFields,
+    loadFieldFromSaved,
+    deleteSavedField
   };
 })();

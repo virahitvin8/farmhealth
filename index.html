@@ -236,6 +236,25 @@
     <button class="btn-secondary btn-sm" onclick="FH.showChangeDetection()" style="margin-top:6px">🔄 Change Detection</button>
   </div>
 
+  <!-- ─── PROFESSIONAL DATA DASHBOARD ─── -->
+  <div class="card" id="dashCard" style="display:none">
+    <h3>📊 Data Dashboard <span class="badge badge-live">PRO</span></h3>
+    <div id="dataDashboard"></div>
+  </div>
+
+  <!-- ─── SAVED FIELDS ─── -->
+  <div class="card">
+    <h3>💾 Saved Fields</h3>
+    <div id="savedFieldsList">
+      <div class="advice info" style="font-size:0.75rem">No saved fields yet. Run analysis, then click save on map.</div>
+    </div>
+    <div class="row" style="margin-top:6px">
+      <button class="btn-secondary btn-sm" onclick="FH.saveCurrentField()" style="flex:1">💾 Save Current</button>
+      <button class="btn-secondary btn-sm" onclick="FH.renderSavedFields()" style="flex:1">🔄 Refresh</button>
+    </div>
+    <div class="hint">Saved fields are stored in your browser and sync across devices.</div>
+  </div>
+
   <!-- ─── AI ADVICE ─── -->
   <div class="card" id="aiCard" style="display:none">
     <h3 class="card-collapse" onclick="FH.toggleCard(this)">
@@ -354,6 +373,26 @@
     <button class="map-ctrl-btn" onclick="FH.startGpsWalk()" style="background:var(--green); color:#fff; border-color:var(--green); font-weight:bold;">📍 GPS Walk</button>
     <button class="map-ctrl-btn" onclick="FH.toggleLayer()">🗺️ Labels</button>
     <button class="map-ctrl-btn" onclick="FH.cycleBasemap()">🌍 Basemap</button>
+  </div>
+  <!-- ─── PROFESSIONAL TOOLS BAR ─── -->
+  <div class="prof-tools">
+    <button class="prof-tool-btn" onclick="FH.toggleFullscreen()" title="Fullscreen mode">🗺️ Full</button>
+    <button class="prof-tool-btn" onclick="FH.enableCompare()" title="Split-view compare">🔀 Compare</button>
+    <button class="prof-tool-btn" onclick="FH.toggleTimeAnimation()" title="Timelapse animation">▶️ Animate</button>
+  </div>
+  <!-- ─── COMPARE BAR ─── -->
+  <div class="compare-bar" id="compareBar">
+    <span style="color:var(--text-dim);font-size:0.68rem">🔀 Split-view</span>
+    <span id="compareLabel" style="font-size:0.72rem;font-weight:600">NDVI: Current</span>
+    <button class="compare-btn" onclick="FH.switchLayer('ndmi')">🌊 NDMI</button>
+    <button class="compare-btn" onclick="FH.disableCompare()">✕ Exit</button>
+  </div>
+  <!-- ─── ANIMATION CONTROLS ─── -->
+  <div class="anim-controls" id="animControls">
+    <button class="anim-btn" onclick="FH.toggleTimeAnimation()" id="animPlayBtn" title="Play/Pause">⏯️</button>
+    <span class="anim-label">Scene:</span>
+    <span class="anim-date" id="animDate">--</span>
+    <span class="anim-label" id="animProgress">0/0</span>
   </div>
   <!-- ─── FLOATING LEGEND ─── -->
   <div class="map-legend" id="mapLegend" style="display:none; bottom: 30px;">

@@ -1470,6 +1470,334 @@ button {
   transition: width 0.6s ease;
 }
 
+/* ═══════════════════════════════════════════════════════════
+   PROFESSIONAL FEATURES (NASA Worldview / Copernicus / USGS)
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── FULLSCREEN MAP ── */
+#mapArea.fullscreen {
+  position: fixed !important;
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 9999;
+}
+
+.fullscreen-btn {
+  position: absolute !important;
+  bottom: 14px;
+  left: 14px;
+  z-index: 1000;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  color: var(--green-light);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s;
+  white-space: nowrap;
+  width: auto;
+  margin: 0;
+}
+
+.fullscreen-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--green);
+}
+
+/* ── SPLIT-VIEW COMPARISON ── */
+.compare-bar {
+  position: absolute;
+  top: 55px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 14px;
+  display: none;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.75rem;
+}
+
+.compare-bar.show { display: flex; }
+
+.compare-btn {
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--green-light);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  width: auto;
+  margin: 0;
+}
+
+.compare-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--green);
+}
+
+.compare-btn.active {
+  background: var(--green);
+  color: #06210f;
+  border-color: var(--green);
+}
+
+/* ── TIME ANIMATION CONTROLS ── */
+.anim-controls {
+  position: absolute;
+  bottom: 60px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 8px 16px;
+  display: none;
+  align-items: center;
+  gap: 12px;
+}
+
+.anim-controls.show { display: flex; }
+
+.anim-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-light);
+  background: var(--bg-elevated);
+  color: var(--green-light);
+  cursor: pointer;
+  font-size: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0;
+  margin: 0;
+}
+
+.anim-btn:hover {
+  background: var(--green);
+  color: #06210f;
+  border-color: var(--green);
+}
+
+.anim-btn.playing {
+  background: var(--red);
+  color: #fff;
+  border-color: var(--red);
+}
+
+.anim-label {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.anim-date {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 90px;
+  text-align: center;
+}
+
+/* ── SAVED FIELDS LIST ── */
+.saved-field-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-input);
+  border-radius: 8px;
+  margin-bottom: 5px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.2s;
+}
+
+.saved-field-item:hover {
+  border-color: var(--border-light);
+  background: var(--bg-hover);
+}
+
+.saved-field-info { flex: 1; min-width: 0; }
+
+.saved-field-name {
+  font-weight: 600;
+  font-size: 0.78rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-field-meta {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.saved-field-del {
+  width: 24px !important;
+  height: 24px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  font-size: 0.7rem;
+  background: transparent;
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.saved-field-del:hover {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(231,76,60,0.1);
+}
+
+/* ── PROFESSIONAL DATA DASHBOARD ── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.dashboard-card {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  transition: border-color 0.2s;
+}
+
+.dashboard-card:hover {
+  border-color: var(--border-light);
+}
+
+.dash-label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-dim);
+  margin-bottom: 3px;
+}
+
+.dash-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--green-light);
+}
+
+.dash-value.dash-warn { color: var(--orange); }
+.dash-value.dash-bad { color: var(--red); }
+.dash-value.dash-good { color: var(--green-light); }
+
+.dash-trend {
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.dashboard-timeline {
+  margin-top: 10px;
+  padding: 10px;
+  background: var(--bg-input);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.dash-timeline-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  margin-bottom: 8px;
+}
+
+.dash-timeline-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 45px;
+}
+
+.dash-bar {
+  flex: 1;
+  background: var(--green);
+  border-radius: 2px 2px 0 0;
+  min-height: 4px;
+  transition: height 0.3s;
+  opacity: 0.7;
+}
+
+.dash-bar:hover {
+  opacity: 1;
+}
+
+/* ── ENHANCED SCENE BROWSER ── */
+.scene-thumb {
+  flex-shrink: 0;
+}
+
+/* ── MAP CONTROLS BAR ── */
+.prof-tools {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 999;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.prof-tool-btn {
+  background: var(--glass);
+  backdrop-filter: var(--blur);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 0.68rem;
+  color: var(--green-light);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s;
+  width: auto;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.prof-tool-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--green);
+}
+
+.prof-tool-btn.active {
+  background: var(--green);
+  color: #06210f;
+  border-color: var(--green);
+}
+
 /* ── RESPONSIVE ── */
 
 @media (max-width: 800px) {

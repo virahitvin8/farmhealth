@@ -227,7 +227,20 @@ const FH_CONFIG = (function() {
       lessonIdx: 0,
       settings: {},
       shToken: null,
-      shTokenExpiry: 0
+      shTokenExpiry: 0,
+      // Professional features
+      fullscreen: false,
+      compareMode: false,
+      compareLayer: null,
+      compareDate: null,
+      compareSlider: null,
+      compareOverlay: null,
+      timeAnimating: false,
+      timeAnimFrame: null,
+      timeAnimScenes: [],
+      timeAnimIdx: 0,
+      savedFields: [],
+      sceneThumbnails: []
     };
   }
 
